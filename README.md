@@ -1,3 +1,5 @@
+#Dodge Patrol VCM
+
 Project Overview
 
 The Vehicle Control Module (VCM) is an ESP32-S3 based controller that completely replaces the original Kids Trax electronics while retaining the original pedal, forward/reverse shifter, steering wheel, lights, and motors.
