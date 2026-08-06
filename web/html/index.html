@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0e14">
+<title>Dodge Patrol VCM</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand"><span class="logo">&#9679;</span> <span id="veh-name">Dodge Patrol</span> <span class="sub">VCM</span></div>
+  <div class="statusgrp">
+    <span id="sys-state" class="badge state">BOOT</span>
+    <span id="conn" class="badge conn off">DISCONNECTED</span>
+  </div>
+</header>
+
+<main id="content">
+
+<!-- ============================================================ DASHBOARD -->
+<section id="page-dash" class="page active">
+  <div class="banner warn hidden" id="banner-commission">NOT COMMISSIONED &mdash; complete calibration before driving</div>
+  <div class="banner err hidden" id="banner-fault">FAULT ACTIVE &mdash; see Diagnostics</div>
+  <div class="speedo-wrap">
+    <div class="speedo"><span id="d-speed">0.0</span><small>m/s</small></div>
+    <div class="speedo-side">
+      <div class="kv"><label>Control</label><b id="d-src">NONE</b></div>
+      <div class="kv"><label>Battery</label><b><span id="d-batt">--</span> V</b></div>
+      <div class="kv"><label>Throttle</label><b><span id="d-thr">0</span> %</b></div>
+    </div>
+  </div>
+  <div class="grid" id="dash-grid">
+    <div class="card"><label>Steering</label><b><span id="d-steer">0.0</span>&deg;</b></div>
+    <div class="card"><label>Left Wheel</label><b><span id="d-lw">0.0</span> m/s</b></div>
+    <div class="card"><label>Right Wheel</label><b><span id="d-rw">0.0</span> m/s</b></div>
+    <div class="card"><label>Left Motor</label><b><span id="d-li">0.0</span> A</b></div>
+    <div class="card"><label>Right Motor</label><b><span id="d-ri">0.0</span> A</b></div>
+    <div class="card"><label>Steer Motor</label><b><span id="d-si">0.0</span> A</b></div>
+    <div class="card"><label>RC Signal</label><b id="d-rc">--</b></div>
+    <div class="card"><label>Nano Link</label><b id="d-nano">--</b></div>
+    <div class="card"><label>Diff Bias</label><b id="d-bias">0.00</b></div>
+    <div class="card"><label>Odometer</label><b><span id="d-odo">0</span> m</b></div>
+    <div class="card"><label>Trip</label><b><span id="d-trip">0</span> m</b></div>
+    <div class="card"><label>Uptime</label><b id="d-up">0s</b></div>
+  </div>
+  <button class="btn danger block" id="btn-estop">EMERGENCY STOP</button>
+  <button class="btn ghost block hidden" id="btn-estop-clear">Clear Emergency Stop</button>
+</section>
+
+<!-- ============================================================ REMOTE -->
+<section id="page-remote" class="page">
+  <h2>Web Remote</h2>
+  <div class="banner info" id="remote-status">Control not taken</div>
+  <div class="remote-grid">
+    <div class="slider-col">
+      <label>Throttle <span id="r-thr-val">0%</span></label>
+      <input type="range" id="r-thr" class="vslider" min="-100" max="100" value="0" step="1" orient="vertical">
+      <div class="hint">fwd / rev</div>
+    </div>
+    <div class="remote-main">
+      <button class="btn primary block" id="btn-take">TAKE CONTROL</button>
+      <button class="btn ghost block" id="btn-release">RELEASE</button>
+      <button class="btn danger block" id="btn-rstop">STOP</button>
+      <div class="row">
+        <button class="btn toggle" id="btn-lights">Lights</button>
+        <button class="btn toggle" id="btn-siren">Siren</button>
+      </div>
+      <div class="kv"><label>Actual speed</label><b><span id="r-spd">0.0</span> m/s</b></div>
+      <div class="kv"><label>Steering</label><b><span id="r-act">0</span>&deg;</b></div>
+    </div>
+  </div>
+  <label>Steering <span id="r-str-val">0%</span></label>
+  <input type="range" id="r-str" class="hslider" min="-100" max="100" value="0" step="1">
+  <div class="hint">Sliders re-center on release. Commands stream over WebSocket at 10 Hz; if the link drops the vehicle stops.</div>
+</section>
+
+<!-- ============================================================ CONFIG -->
+<section id="page-config" class="page">
+  <h2>Configuration</h2>
+  <div class="row wrap">
+    <select id="cfg-cat"></select>
+    <select id="cfg-level">
+      <option value="basic">Basic</option>
+      <option value="advanced">Advanced</option>
+      <option value="expert">Expert</option>
+    </select>
+  </div>
+  <div id="cfg-list"></div>
+  <div class="row sticky-actions">
+    <button class="btn primary" id="cfg-apply">APPLY</button>
+    <button class="btn" id="cfg-save">SAVE</button>
+    <button class="btn ghost" id="cfg-revert">REVERT</button>
+  </div>
+  <div class="hint">APPLY = live in RAM for testing. SAVE = persist to flash. REVERT = reload last saved.</div>
+  <h3>Backup</h3>
+  <div class="row">
+    <a class="btn" href="/api/config/export" download>Export JSON</a>
+    <label class="btn ghost">Import JSON<input type="file" id="cfg-import" accept=".json" hidden></label>
+  </div>
+  <h3>Factory</h3>
+  <button class="btn danger" id="cfg-factory">Restore Factory Defaults</button>
+</section>
+
+<!-- ============================================================ CALIBRATION -->
+<section id="page-cal" class="page">
+  <h2>Calibration</h2>
+  <div class="banner info" id="cal-comm-banner">Status: <b id="cal-comm">--</b></div>
+
+  <details open><summary>Steering Calibration <span class="pill" id="cal-str-valid">--</span></summary>
+    <div class="grid small">
+      <div class="card"><label>Firgelli raw</label><b id="c-raw">--</b></div>
+      <div class="card"><label>Filtered</label><b id="c-filt">--</b></div>
+      <div class="card"><label>Position</label><b><span id="c-pos">--</span> %</b></div>
+      <div class="card"><label>Angle</label><b><span id="c-ang">--</span>&deg;</b></div>
+      <div class="card"><label>PWM</label><b><span id="c-pwm">--</span> %</b></div>
+      <div class="card"><label>Current</label><b><span id="c-cur">--</span> A</b></div>
+      <div class="card"><label>Wizard</label><b id="c-state">IDLE</b></div>
+      <div class="card"><label>Limits</label><b id="c-lims">--</b></div>
+    </div>
+    <p class="hint">Lift the front wheels and ensure steering travel is unobstructed before starting. The actuator moves at low power to each hard stop (detected by current rise AND no motion).</p>
+    <div class="row wrap">
+      <label>PWM % <input type="number" id="cal-pwm" value="25" min="5" max="40" step="1"></label>
+      <label>Current A <input type="number" id="cal-amp" value="3.0" min="0.5" max="10" step="0.1"></label>
+      <label>Hold ms <input type="number" id="cal-hold" value="300" min="100" max="2000" step="50"></label>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="cal-str-start">Start Calibration</button>
+      <button class="btn danger" id="cal-str-abort">Abort</button>
+    </div>
+    <h4>Manual override</h4>
+    <div class="row wrap">
+      <label>Left <input type="number" id="cal-mleft" step="1"></label>
+      <label>Center <input type="number" id="cal-mcenter" step="1"></label>
+      <label>Right <input type="number" id="cal-mright" step="1"></label>
+      <button class="btn" id="cal-msave">Set Limits</button>
+    </div>
+    <h4>Steering test &amp; center fine-tune</h4>
+    <div class="row">
+      <button class="btn" data-steer="10">LEFT</button>
+      <button class="btn" data-steer="50">CENTER</button>
+      <button class="btn" data-steer="90">RIGHT</button>
+      <button class="btn ghost" id="cal-steer-off">Disable</button>
+    </div>
+    <input type="range" id="cal-steer-slider" min="0" max="100" value="50" step="1" class="hslider">
+    <div class="row wrap" id="trim-row">
+      <span class="hint">Center trim:</span>
+      <button class="btn sm" data-trim="-5">-5</button>
+      <button class="btn sm" data-trim="-1">-1</button>
+      <b id="trim-val">0.0</b>
+      <button class="btn sm" data-trim="1">+1</button>
+      <button class="btn sm" data-trim="5">+5</button>
+    </div>
+  </details>
+
+  <details><summary>Speed Calibration</summary>
+    <div class="grid small">
+      <div class="card"><label>L freq</label><b><span id="c-lf">0</span> Hz</b></div>
+      <div class="card"><label>R freq</label><b><span id="c-rf">0</span> Hz</b></div>
+      <div class="card"><label>L count</label><b id="c-lc">0</b></div>
+      <div class="card"><label>R count</label><b id="c-rc">0</b></div>
+      <div class="card"><label>L RPM</label><b id="c-lrpm">0</b></div>
+      <div class="card"><label>R RPM</label><b id="c-rrpm">0</b></div>
+      <div class="card"><label>L speed</label><b><span id="c-ls">0</span> m/s</b></div>
+      <div class="card"><label>R speed</label><b><span id="c-rs">0</span> m/s</b></div>
+    </div>
+    <p class="hint">Lift the rear wheels. Run a motor test and fine-tune counts/rev and per-wheel calibration factors in Configuration &rarr; drive.</p>
+    <div class="row wrap">
+      <select id="mt-level"><option value="10">10%</option><option value="20">20%</option><option value="30">30%</option></select>
+      <button class="btn" id="mt-left">LEFT MOTOR</button>
+      <button class="btn" id="mt-right">RIGHT MOTOR</button>
+      <button class="btn" id="mt-both">BOTH</button>
+      <button class="btn danger" id="mt-stop">STOP</button>
+    </div>
+  </details>
+
+  <details><summary>IMU Calibration</summary>
+    <div class="grid small">
+      <div class="card"><label>Raw X/Y/Z g</label><b id="c-iraw">--</b></div>
+      <div class="card"><label>Vehicle X/Y/Z g</label><b id="c-icor">--</b></div>
+      <div class="card"><label>Pitch</label><b><span id="c-pitch">0</span>&deg;</b></div>
+      <div class="card"><label>Roll</label><b><span id="c-roll">0</span>&deg;</b></div>
+      <div class="card"><label>Yaw rate</label><b><span id="c-yaw">0</span>&deg;/s</b></div>
+      <div class="card"><label>Health</label><b id="c-imuh">--</b></div>
+    </div>
+    <p class="hint">Set mounting orientation in Configuration &rarr; imu (axis sources + inversion), then zero with the vehicle stationary and level.</p>
+    <button class="btn primary" id="cal-imu-zero">ZERO IMU</button>
+  </details>
+
+  <details><summary>Current Sensors</summary>
+    <p class="hint">With all motors off, capture the zero offset. Then APPLY+SAVE in Configuration &rarr; current.</p>
+    <button class="btn primary" id="cal-cur-zero">Capture Zero Offset</button>
+  </details>
+
+  <details><summary>Commissioning</summary>
+    <p class="hint">Complete steering calibration first. Commissioning unlocks normal driving.</p>
+    <button class="btn primary" id="cal-commission">Mark Vehicle Commissioned</button>
+    <button class="btn ghost" id="cal-decommission">De-commission</button>
+  </details>
+</section>
+
+<!-- ============================================================ DIAGNOSTICS -->
+<section id="page-diag" class="page">
+  <h2>Diagnostics</h2>
+  <h3>Faults <button class="btn sm ghost right" id="flt-clear">Clear History</button></h3>
+  <table class="tbl" id="flt-tbl"><thead><tr><th>Code</th><th>Description</th><th>Sev</th><th>Active</th><th>Count</th></tr></thead><tbody></tbody></table>
+
+  <h3>Steering loop</h3>
+  <div class="grid small">
+    <div class="card"><label>Requested</label><b><span id="g-sreq">--</span> %</b></div>
+    <div class="card"><label>Actual</label><b><span id="g-sact">--</span> %</b></div>
+    <div class="card"><label>Error</label><b id="g-serr">--</b></div>
+    <div class="card"><label>P / I / D</label><b id="g-spid">--</b></div>
+    <div class="card"><label>Output</label><b id="g-sout">--</b></div>
+    <div class="card"><label>PWM</label><b id="g-spwm">--</b></div>
+  </div>
+  <h3>Drive</h3>
+  <div class="grid small">
+    <div class="card"><label>Throttle</label><b id="g-thr">--</b></div>
+    <div class="card"><label>Requested</label><b><span id="g-req">--</span> m/s</b></div>
+    <div class="card"><label>Limited</label><b><span id="g-lim">--</span> m/s</b></div>
+    <div class="card"><label>L tgt / act</label><b id="g-l">--</b></div>
+    <div class="card"><label>R tgt / act</label><b id="g-r">--</b></div>
+    <div class="card"><label>L/R PWM</label><b id="g-pwm">--</b></div>
+    <div class="card"><label>Slip</label><b id="g-slip">--</b></div>
+    <div class="card"><label>Diff bias</label><b id="g-bias">--</b></div>
+  </div>
+  <h3>Nano link (UART monitor)</h3>
+  <div class="grid small">
+    <div class="card"><label>Status</label><b id="g-nano">--</b></div>
+    <div class="card"><label>Rate</label><b><span id="g-rate">--</span> Hz</b></div>
+    <div class="card"><label>Packets</label><b id="g-rx">--</b></div>
+    <div class="card"><label>Lost</label><b id="g-lost">--</b></div>
+    <div class="card"><label>CRC errors</label><b id="g-crc">--</b></div>
+    <div class="card"><label>Seq errors</label><b id="g-seq">--</b></div>
+    <div class="card"><label>Age</label><b><span id="g-age">--</span> ms</b></div>
+    <div class="card"><label>Protocol</label><b id="g-proto">--</b></div>
+    <div class="card"><label>Nano FW</label><b id="g-nfw">--</b></div>
+    <div class="card"><label>RC &micro;s</label><b id="g-rcus" class="tiny">--</b></div>
+    <div class="card"><label>ADC</label><b id="g-adc" class="tiny">--</b></div>
+    <div class="card"><label>Fault flags</label><b id="g-nff">--</b></div>
+  </div>
+  <h3>System</h3>
+  <div class="grid small">
+    <div class="card"><label>CPU</label><b><span id="g-cpu">--</span> %</b></div>
+    <div class="card"><label>Heap</label><b id="g-heap">--</b></div>
+    <div class="card"><label>Min heap</label><b id="g-minheap">--</b></div>
+    <div class="card"><label>Dyn task</label><b id="g-dyn" class="tiny">--</b></div>
+    <div class="card"><label>Steer task</label><b id="g-str" class="tiny">--</b></div>
+    <div class="card"><label>WiFi RSSI</label><b id="g-rssi">--</b></div>
+  </div>
+  <h3>Event recorder</h3>
+  <div class="row">
+    <a class="btn" href="/api/recorder" download>Download CSV</a>
+    <button class="btn ghost" id="rec-resume">Resume Recording</button>
+  </div>
+  <div class="row">
+    <button class="btn ghost" id="tel-pause">Pause Telemetry</button>
+    <button class="btn ghost" id="trip-reset">Reset Trip</button>
+  </div>
+</section>
+
+<!-- ============================================================ LOGS -->
+<section id="page-logs" class="page">
+  <h2>Logs</h2>
+  <div class="row wrap">
+    <select id="log-filter">
+      <option value="">All levels</option>
+      <option>ERROR</option><option>WARN</option><option>INFO</option><option>DEBUG</option><option>TRACE</option>
+    </select>
+    <a class="btn" href="/api/logs/download" download>Download</a>
+    <button class="btn ghost" id="log-clear-view">Clear View</button>
+  </div>
+  <pre id="log-view" class="logview"></pre>
+</section>
+
+<!-- ============================================================ FIRMWARE -->
+<section id="page-fw" class="page">
+  <h2>Firmware</h2>
+  <div class="grid small">
+    <div class="card"><label>Current</label><b id="fw-cur">--</b></div>
+    <div class="card"><label>Build date</label><b id="fw-date" class="tiny">--</b></div>
+    <div class="card"><label>Latest release</label><b id="fw-latest">--</b></div>
+    <div class="card"><label>Status</label><b id="fw-state">IDLE</b></div>
+  </div>
+  <div class="progress hidden" id="fw-prog"><div id="fw-bar"></div><span id="fw-pct">0%</span></div>
+  <div class="banner err hidden" id="fw-err"></div>
+  <h3>GitHub Releases</h3>
+  <div class="row">
+    <button class="btn" id="fw-check">Check for Updates</button>
+    <button class="btn primary hidden" id="fw-install">Install Update</button>
+  </div>
+  <pre id="fw-notes" class="notes hidden"></pre>
+  <h3>Manual Upload</h3>
+  <p class="hint">Upload a firmware .bin built for this board. The vehicle stops and outputs are disabled during the update; a failed image is discarded and the current firmware keeps running.</p>
+  <label class="btn ghost">Choose .bin<input type="file" id="fw-file" accept=".bin" hidden></label>
+  <span id="fw-fname" class="hint"></span>
+  <button class="btn primary" id="fw-upload" disabled>Upload &amp; Flash</button>
+</section>
+
+<!-- ============================================================ SYSTEM -->
+<section id="page-sys" class="page">
+  <h2>System</h2>
+  <table class="tbl kvtbl" id="sys-tbl"><tbody></tbody></table>
+  <h3>Actions</h3>
+  <div class="row wrap">
+    <button class="btn" id="sys-reboot">Reboot</button>
+  </div>
+  <p class="hint">WiFi settings are in Configuration &rarr; wifi (restart required). Holding the boot button for 10 seconds restores factory defaults.</p>
+</section>
+
+</main>
+
+<nav id="tabbar">
+  <button data-page="dash" class="active">Dash</button>
+  <button data-page="remote">Remote</button>
+  <button data-page="config">Config</button>
+  <button data-page="cal">Cal</button>
+  <button data-page="diag">Diag</button>
+  <button data-page="logs">Logs</button>
+  <button data-page="fw">FW</button>
+  <button data-page="sys">Sys</button>
+</nav>
+
+<script src="/app.js"></script>
+</body>
+</html>

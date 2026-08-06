@@ -1,0 +1,39 @@
+/**
+ * @file ina3221.h
+ * @brief INA3221 triple-channel current/voltage monitor driver.
+ *
+ * All three channels are maintained independently; their semantic meaning
+ * (left drive / right drive / steering) is mapped in configuration
+ * (current.chN_role), not hardwired.
+ */
+#pragma once
+
+#include <Arduino.h>
+
+#include "core/types.h"
+
+namespace vcm {
+
+class Ina3221 {
+ public:
+  bool begin();
+
+  /// Read all channels. Call at 100 Hz.
+  /// @param shuntMilliOhm shunt resistor value (config)
+  /// @param offsetA,scale calibration applied to every channel
+  bool sample(float shuntMilliOhm, float offsetA, float scale);
+
+  float currentA(int channel) const { return currentA_[channel]; }  ///< 0..2
+  float busVoltage() const { return busVoltage_; }
+  SensorHealth health() const { return health_; }
+
+ private:
+  bool readReg(uint8_t reg, uint16_t& value);
+
+  float currentA_[3] = {0, 0, 0};
+  float busVoltage_ = 0.0f;
+  SensorHealth health_ = SensorHealth::NOT_PRESENT;
+  uint8_t failCount_ = 0;
+};
+
+}  // namespace vcm
