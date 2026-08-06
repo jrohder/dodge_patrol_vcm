@@ -15,4 +15,4 @@
 #endif
 
 // The Nano <-> ESP32 UART protocol version is defined by the SHARED
-// protocol module: vcmproto::PROTOCOL_VERSION in src/proto/protocol.h.
+// protocol module: veio::proto::kProtocolVersion in src/proto/protocol.h.

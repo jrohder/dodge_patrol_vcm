@@ -3,23 +3,27 @@
 All notable changes to the Dodge Patrol VCM firmware.
 Format: [Keep a Changelog](https://keepachangelog.com), versioning: semver.
 
+## [1.1.1] - 2026-08-06
+
+### Fixed
+- **Verified against public `vcm_extended_io`**: replaced the reconstructed
+  protocol with a **byte-identical** copy of Nano `src/proto/protocol.{h,cpp}`
+  (`veio::proto`). Critical mismatches in the earlier reconstruction:
+  - Sync is `0x55 0xAA` (not AA/55)
+  - Protocol version is **1** (Nano’s `kProtocolVersion`)
+  - CRC covers bytes after the sync preamble only
+  - Telemetry field layout matches Nano (rcAgeMs, 12-byte WheelData with
+    signed pulseCount + freqHzX10 + periodUs, motor/battery ADC pairs)
+  - Commands are `kPktCommand` (0x40) with Nano’s CommandId set; keepalive
+    is `kCmdPing` (Nano answers ACK; no ESP32→Nano heartbeat packet)
+- Diagnostics consume HEARTBEAT / DIAGNOSTIC / VERSION / FAULT packets.
+- `PROTOCOL.md` synced from Nano docs.
+
 ## [1.1.0] - 2026-08-06
 
 ### Changed
-- **Nano UART protocol v2**: ESP32 now consumes the shared
-  `src/proto/protocol.{h,cpp}` module (same framing as
-  `vcm_extended_io`). Old 44-byte / millisecond protocol removed.
-- Telemetry payload is **63 bytes** with generic header (sync, type,
-  length, µs timestamp), `periodUs` wheel data (uint32), richer Nano
-  health (watchdog resets, loop max, CPU, event count).
-- Wheel frequency is derived on the ESP32: `freqHz = 1e6 / periodUs`.
-- Diagnostics page exposes packet loss, CRC failures, sequence gaps,
-  resyncs, version errors, latency jitter, watchdog resets, Nano RX CRC,
-  loop max, CPU, uptime, fault/status bits, and event counters.
-
-### Removed
-- `src/drivers/uart/nano_protocol.h` and standalone `crc16` driver
-  (replaced by the shared protocol module).
+- First attempt at Nano UART protocol alignment (superseded by 1.1.1 once
+  `vcm_extended_io` became public and could be verified byte-for-byte).
 
 ## [1.0.0] - 2026-08-06
 

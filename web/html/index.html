@@ -233,29 +233,35 @@
     <div class="card"><label>Status</label><b id="g-nano">--</b></div>
     <div class="card"><label>Rate</label><b><span id="g-rate">--</span> Hz</b></div>
     <div class="card"><label>Packets</label><b id="g-rx">--</b></div>
+    <div class="card"><label>Telemetry</label><b id="g-tel">--</b></div>
     <div class="card"><label>Lost</label><b id="g-lost">--</b></div>
     <div class="card"><label>CRC errors</label><b id="g-crc">--</b></div>
+    <div class="card"><label>Frame errors</label><b id="g-ferr">--</b></div>
     <div class="card"><label>Seq gaps</label><b id="g-seq">--</b></div>
-    <div class="card"><label>Resyncs</label><b id="g-rsy">--</b></div>
-    <div class="card"><label>Version errs</label><b id="g-ver">--</b></div>
     <div class="card"><label>Jitter</label><b><span id="g-jit">--</span> &micro;s</b></div>
     <div class="card"><label>Age</label><b><span id="g-age">--</span> ms</b></div>
+    <div class="card"><label>Heartbeat age</label><b><span id="g-hbage">--</span> ms</b></div>
     <div class="card"><label>Protocol</label><b id="g-proto">--</b></div>
     <div class="card"><label>Nano FW</label><b id="g-nfw">--</b></div>
     <div class="card"><label>Nano uptime</label><b><span id="g-nup">--</span> s</b></div>
-    <div class="card"><label>Watchdog resets</label><b id="g-wdg">--</b></div>
+    <div class="card"><label>Boot reason</label><b id="g-boot">--</b></div>
+    <div class="card"><label>Watchdog boot</label><b id="g-wdg">--</b></div>
     <div class="card"><label>Nano RX CRC</label><b id="g-ncrc">--</b></div>
-    <div class="card"><label>Nano loop max</label><b><span id="g-nloop">--</span> &micro;s</b></div>
+    <div class="card"><label>Nano frame errs</label><b id="g-nferr">--</b></div>
+    <div class="card"><label>Nano loop avg/max</label><b id="g-nloop" class="tiny">--</b></div>
     <div class="card"><label>Nano CPU</label><b><span id="g-ncpu">--</span> %</b></div>
-    <div class="card"><label>Events (ring / rcvd)</label><b id="g-ev">--</b></div>
+    <div class="card"><label>Sched/samp overrun</label><b id="g-nover" class="tiny">--</b></div>
+    <div class="card"><label>TX drops / cmds</label><b id="g-ntx" class="tiny">--</b></div>
+    <div class="card"><label>RC glitches</label><b id="g-nglitch">--</b></div>
+    <div class="card"><label>Nano free RAM</label><b id="g-nram">--</b></div>
+    <div class="card"><label>ACKs / faults</label><b id="g-acks">--</b></div>
     <div class="card"><label>Timestamp</label><b id="g-ts" class="tiny">--</b></div>
     <div class="card"><label>Period L/R</label><b id="g-per" class="tiny">--</b></div>
     <div class="card"><label>RC &micro;s</label><b id="g-rcus" class="tiny">--</b></div>
     <div class="card"><label>RC mask</label><b id="g-rcm">--</b></div>
-    <div class="card"><label>ADC</label><b id="g-adc" class="tiny">--</b></div>
+    <div class="card"><label>ADC (batt/A/B)</label><b id="g-adc" class="tiny">--</b></div>
     <div class="card"><label>Fault bits</label><b id="g-nff">--</b></div>
-    <div class="card"><label>Status bits</label><b id="g-nst">--</b></div>
-    <div class="card"><label>Digital I/O</label><b id="g-dio">--</b></div>
+    <div class="card"><label>Nano state / out</label><b id="g-nout">--</b></div>
   </div>
   <h3>System</h3>
   <div class="grid small">

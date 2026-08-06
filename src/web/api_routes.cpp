@@ -59,7 +59,7 @@ void VcmWebServer::setupApi() {
     doc["fw_version"] = VCM_FW_VERSION;
     doc["git_commit"] = VCM_GIT_COMMIT;
     doc["build_date"] = VCM_BUILD_DATE;
-    doc["protocol_version"] = vcmproto::PROTOCOL_VERSION;
+    doc["protocol_version"] = veio::proto::kProtocolVersion;
     doc["chip"] = ESP.getChipModel();
     doc["flash_kb"] = ESP.getFlashChipSize() / 1024;
     doc["sketch_kb"] = ESP.getSketchSize() / 1024;
@@ -230,24 +230,33 @@ void VcmWebServer::setupApi() {
     req->send(res);
   });
 
-  // ---------------------------------------------------------------- nano events
-  server_.on("/api/nano/events", HTTP_GET, [](AsyncWebServerRequest* req) {
-    vcmproto::EventPayload events[NanoLink::EVENT_RING];
-    const size_t n = nano.copyEvents(events, NanoLink::EVENT_RING);
+  // ---------------------------------------------------------------- nano
+  server_.on("/api/nano/version", HTTP_GET, [](AsyncWebServerRequest* req) {
     JsonDocument doc;
-    JsonArray arr = doc["events"].to<JsonArray>();
-    for (size_t i = 0; i < n; ++i) {
-      JsonObject o = arr.add<JsonObject>();
-      o["us"] = events[i].timestampUs;
-      o["code"] = events[i].code;
-      JsonArray d = o["data"].to<JsonArray>();
-      d.add(events[i].data[0]);
-      d.add(events[i].data[1]);
-      d.add(events[i].data[2]);
+    doc["have"] = nano.haveVersion();
+    if (nano.haveVersion()) {
+      const auto& v = nano.version();
+      doc["fw"] = String(v.fwMajor) + "." + String(v.fwMinor) + "." +
+                  String(v.fwPatch);
+      doc["protocol"] = v.protocolVersion;
+      doc["git_hash"] = v.gitHash;
+      doc["build_date"] = String(v.buildDate);
+      doc["build_time"] = String(v.buildTime);
+      doc["board_id"] = v.boardId;
+      doc["boot_reason"] = v.bootReason;
     }
-    doc["received"] = nano.eventsReceived();
-    doc["acks"] = nano.acksReceived();
     sendJson(req, doc);
+  });
+  server_.on("/api/nano/diagnostics", HTTP_GET,
+             [](AsyncWebServerRequest* req) {
+               // Request a single diagnostic snapshot from the Nano.
+               uint8_t args[4] = {0, 0, 0, 0};
+               nano.sendCommand(veio::proto::kCmdStartDiagnostics, args);
+               sendOk(req, true);
+             });
+  server_.on("/api/nano/ping", HTTP_POST, [](AsyncWebServerRequest* req) {
+    nano.sendPing();
+    sendOk(req, true);
   });
 
   // ---------------------------------------------------------------- recorder

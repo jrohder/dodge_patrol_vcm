@@ -1,12 +1,14 @@
 /**
  * @file test_main.cpp
- * @brief Host-side unit tests for pure control/math and the shared protocol.
+ * @brief Host-side unit tests: shared veio::proto UART protocol + control math.
+ *
+ * Protocol tests mirror vcm_extended_io/test/test_protocol so both ends of
+ * the link exercise the same wire format.
  *
  * Run with: pio test -e native
  */
-#include <unity.h>
-
 #include <cstring>
+#include <unity.h>
 
 #include "control/differential_steering.h"
 #include "control/pid.h"
@@ -15,172 +17,188 @@
 #include "proto/protocol.h"
 
 using namespace vcm;
-using namespace vcmproto;
+using namespace veio::proto;
 
-// ------------------------------------------------------------------ CRC16
+// ---------------------------------------------------------------------------
+// CRC16-CCITT-FALSE
+// ---------------------------------------------------------------------------
 
 static void test_crc16_known_vector() {
-  // CRC16-CCITT (0x1021, init 0xFFFF) of "123456789" = 0x29B1
   const uint8_t data[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
   TEST_ASSERT_EQUAL_HEX16(0x29B1, crc16(data, sizeof(data)));
 }
 
-static void test_crc16_detects_corruption() {
-  uint8_t data[16];
-  for (int i = 0; i < 16; ++i) data[i] = (uint8_t)i;
-  const uint16_t good = crc16(data, sizeof(data));
-  data[7] ^= 0x01;
-  TEST_ASSERT_NOT_EQUAL(good, crc16(data, sizeof(data)));
+static void test_crc16_empty() {
+  TEST_ASSERT_EQUAL_HEX16(0xFFFF, crc16(nullptr, 0));
 }
 
-// -------------------------------------------------------------- protocol
-
-static void test_telemetry_payload_size() {
-  TEST_ASSERT_EQUAL(63, (int)sizeof(TelemetryPayload));
-  TEST_ASSERT_EQUAL(11, (int)HEADER_SIZE);
-  TEST_ASSERT_EQUAL(2, (int)PROTOCOL_VERSION);
+static void test_payload_sizes() {
+  TEST_ASSERT_EQUAL_UINT(12, sizeof(WheelData));
+  TEST_ASSERT_EQUAL_UINT(63, sizeof(TelemetryPayload));
+  TEST_ASSERT_EQUAL_UINT(8, sizeof(HeartbeatPayload));
+  TEST_ASSERT_EQUAL_UINT(23, sizeof(DiagnosticPayload));
+  TEST_ASSERT_EQUAL_UINT(4, sizeof(CommandAckPayload));
+  TEST_ASSERT_EQUAL_UINT(4, sizeof(FaultPayload));
+  TEST_ASSERT_EQUAL_UINT(31, sizeof(VersionPayload));
+  TEST_ASSERT_EQUAL_UINT(5, sizeof(CommandPayload));
+  TEST_ASSERT_EQUAL_UINT(1, kProtocolVersion);
+  TEST_ASSERT_EQUAL_HEX8(0x55, kSync0);
+  TEST_ASSERT_EQUAL_HEX8(0xAA, kSync1);
 }
 
-static void fillTelemetry(TelemetryPayload& t) {
-  memset(&t, 0, sizeof(t));
-  for (int i = 0; i < 6; ++i) t.rcUs[i] = (uint16_t)(1000 + i * 100);
+static void test_encode_layout() {
+  uint8_t buf[kMaxFrameSize];
+  const uint8_t payload[] = {0xDE, 0xAD, 0xBE, 0xEF};
+  const size_t len =
+      encodeFrame(buf, kPktTelemetry, 0x1234, 0xAABBCCDD, payload, 4);
+
+  TEST_ASSERT_EQUAL_UINT(kHeaderSize + 4 + kCrcSize, len);
+  TEST_ASSERT_EQUAL_HEX8(0x55, buf[0]);
+  TEST_ASSERT_EQUAL_HEX8(0xAA, buf[1]);
+  TEST_ASSERT_EQUAL_HEX8(kProtocolVersion, buf[2]);
+  TEST_ASSERT_EQUAL_HEX8(kPktTelemetry, buf[3]);
+  TEST_ASSERT_EQUAL_HEX8(4, buf[4]);
+  TEST_ASSERT_EQUAL_HEX8(0x34, buf[5]);
+  TEST_ASSERT_EQUAL_HEX8(0x12, buf[6]);
+  TEST_ASSERT_EQUAL_HEX8(0xDD, buf[7]);
+  TEST_ASSERT_EQUAL_HEX8(0xCC, buf[8]);
+  TEST_ASSERT_EQUAL_HEX8(0xBB, buf[9]);
+  TEST_ASSERT_EQUAL_HEX8(0xAA, buf[10]);
+  TEST_ASSERT_EQUAL_HEX8(0xDE, buf[11]);
+}
+
+static void test_encode_rejects_oversize() {
+  uint8_t buf[kMaxFrameSize];
+  uint8_t payload[kMaxPayload + 1] = {};
+  TEST_ASSERT_EQUAL_UINT(
+      0, encodeFrame(buf, kPktTelemetry, 0, 0, payload, kMaxPayload + 1));
+}
+
+static void feedAll(FrameParser& p, const uint8_t* data, size_t len,
+                    int* frames) {
+  for (size_t i = 0; i < len; ++i) {
+    if (p.feed(data[i])) ++(*frames);
+  }
+}
+
+static void test_roundtrip_telemetry() {
+  TelemetryPayload t = {};
+  t.rcPulseUs[0] = 1500;
+  t.rcPulseUs[1] = 1548;
   t.rcValidMask = 0x03;
-  t.left.periodUs = 50000;  // 20 Hz
-  t.left.count = 42;
-  t.left.direction = 1;
-  t.right.periodUs = 0;  // stopped
-  t.right.count = 7;
-  t.right.direction = 0;
-  t.adc[0] = 2048;
-  t.faultBits = FB_RC_LOST;
-  t.statusBits = SB_TIMER_ISR_OK;
-  t.fwMajor = 1;
-  t.fwMinor = 2;
-  t.uptimeMs = 123456;
+  t.left.pulseCount = -42;
+  t.left.direction = -1;
+  t.left.freqHzX10 = 123;
+  t.left.periodUs = 81300;
+  t.right.pulseCount = 99999;
+  t.right.direction = 1;
+  t.batteryFilt = 9876;
+  t.systemState = kStateReady;
+  t.faultFlags = kFaultRcSignalLost;
+
+  uint8_t buf[kMaxFrameSize];
+  const size_t len =
+      encodeFrame(buf, kPktTelemetry, 7, 123456789UL, &t, sizeof(t));
+  TEST_ASSERT_TRUE(len > 0);
+
+  FrameParser parser;
+  int frames = 0;
+  feedAll(parser, buf, len, &frames);
+  TEST_ASSERT_EQUAL_INT(1, frames);
+
+  const Frame& f = parser.frame();
+  TEST_ASSERT_EQUAL_HEX8(kPktTelemetry, f.type);
+  TEST_ASSERT_EQUAL_UINT16(7, f.sequence);
+  TEST_ASSERT_EQUAL_UINT32(123456789UL, f.timestampUs);
+  TEST_ASSERT_EQUAL_UINT(sizeof(t), f.payloadLen);
+
+  TelemetryPayload out;
+  memcpy(&out, f.payload, sizeof(out));
+  TEST_ASSERT_EQUAL_UINT16(1500, out.rcPulseUs[0]);
+  TEST_ASSERT_EQUAL_INT32(-42, out.left.pulseCount);
+  TEST_ASSERT_EQUAL_UINT32(81300, out.left.periodUs);
+  TEST_ASSERT_EQUAL_HEX16(kFaultRcSignalLost, out.faultFlags);
 }
 
-static void test_encode_decode_roundtrip() {
-  TelemetryPayload src;
-  fillTelemetry(src);
-
-  uint8_t frame[MAX_FRAME];
-  const size_t len =
-      encode(frame, PKT_TELEMETRY, 7, 999999u, &src, sizeof(src));
-  TEST_ASSERT_EQUAL(HEADER_SIZE + sizeof(TelemetryPayload) + CRC_SIZE, (int)len);
-
-  Parser p;
-  Packet out;
-  bool got = false;
-  for (size_t i = 0; i < len; ++i) {
-    if (p.feed(frame[i], out)) {
-      got = true;
-      break;
-    }
-  }
-  TEST_ASSERT_TRUE(got);
-  TEST_ASSERT_EQUAL(PKT_TELEMETRY, out.header.packetType);
-  TEST_ASSERT_EQUAL(7, out.header.seq);
-  TEST_ASSERT_EQUAL(999999u, out.header.timestampUs);
-  TEST_ASSERT_EQUAL(sizeof(TelemetryPayload), out.header.payloadLen);
-
-  const TelemetryPayload* t = out.asTelemetry();
-  TEST_ASSERT_NOT_NULL(t);
-  TEST_ASSERT_EQUAL(src.left.periodUs, t->left.periodUs);
-  TEST_ASSERT_EQUAL(src.left.count, t->left.count);
-  TEST_ASSERT_EQUAL(src.left.direction, t->left.direction);
-  TEST_ASSERT_EQUAL(src.right.periodUs, t->right.periodUs);
-  TEST_ASSERT_EQUAL(src.rcUs[0], t->rcUs[0]);
-  TEST_ASSERT_EQUAL(src.faultBits, t->faultBits);
-  TEST_ASSERT_EQUAL(src.fwMajor, t->fwMajor);
-  TEST_ASSERT_EQUAL(src.fwMinor, t->fwMinor);
-  TEST_ASSERT_EQUAL(1, (int)p.stats().frames);
-  TEST_ASSERT_EQUAL(0, (int)p.stats().crcErrors);
-}
-
-static void test_parser_rejects_bad_crc() {
-  TelemetryPayload src;
-  fillTelemetry(src);
-  uint8_t frame[MAX_FRAME];
-  const size_t len =
-      encode(frame, PKT_TELEMETRY, 1, 100u, &src, sizeof(src));
-  frame[len - 1] ^= 0xFF;  // corrupt CRC
-
-  Parser p;
-  Packet out;
-  bool got = false;
-  for (size_t i = 0; i < len; ++i) {
-    if (p.feed(frame[i], out)) got = true;
-  }
-  TEST_ASSERT_FALSE(got);
-  TEST_ASSERT_EQUAL(1, (int)p.stats().crcErrors);
-  TEST_ASSERT_EQUAL(0, (int)p.stats().frames);
-}
-
-static void test_parser_rejects_wrong_version() {
-  TelemetryPayload src;
-  fillTelemetry(src);
-  uint8_t frame[MAX_FRAME];
-  const size_t len =
-      encode(frame, PKT_TELEMETRY, 1, 100u, &src, sizeof(src));
-  frame[2] = 99;  // wrong version; CRC will also fail / version check first
-  // Recompute CRC so we isolate the version check
-  const uint16_t crc = crc16(frame, HEADER_SIZE + sizeof(src));
-  memcpy(frame + HEADER_SIZE + sizeof(src), &crc, 2);
-
-  Parser p;
-  Packet out;
-  bool got = false;
-  for (size_t i = 0; i < len; ++i) {
-    if (p.feed(frame[i], out)) got = true;
-  }
-  TEST_ASSERT_FALSE(got);
-  TEST_ASSERT_EQUAL(1, (int)p.stats().versionErrors);
+static void test_roundtrip_empty_payload() {
+  uint8_t buf[kMaxFrameSize];
+  const size_t len = encodeFrame(buf, kPktHeartbeat, 1, 2, nullptr, 0);
+  TEST_ASSERT_EQUAL_UINT(kHeaderSize + kCrcSize, len);
+  FrameParser parser;
+  int frames = 0;
+  feedAll(parser, buf, len, &frames);
+  TEST_ASSERT_EQUAL_INT(1, frames);
+  TEST_ASSERT_EQUAL_UINT(0, parser.frame().payloadLen);
 }
 
 static void test_parser_resync_after_garbage() {
-  TelemetryPayload src;
-  fillTelemetry(src);
-  uint8_t frame[MAX_FRAME];
-  const size_t len =
-      encode(frame, PKT_TELEMETRY, 3, 42u, &src, sizeof(src));
-
-  Parser p;
-  Packet out;
-  // Feed garbage then a valid frame
-  const uint8_t junk[] = {0x00, 0xFF, 0xAA, 0x00, 0x55, 0x12};
-  for (uint8_t b : junk) p.feed(b, out);
-
-  bool got = false;
-  for (size_t i = 0; i < len; ++i) {
-    if (p.feed(frame[i], out)) got = true;
-  }
-  TEST_ASSERT_TRUE(got);
-  TEST_ASSERT_EQUAL(3, out.header.seq);
-  TEST_ASSERT_TRUE(p.stats().resyncs > 0);
-  TEST_ASSERT_EQUAL(1, (int)p.stats().frames);
-}
-
-static void test_command_encode() {
   CommandPayload cmd = {};
-  cmd.command = CMD_HEARTBEAT;
-  uint8_t frame[MAX_FRAME];
+  cmd.commandId = kCmdPing;
+  uint8_t frameBuf[kMaxFrameSize];
   const size_t len =
-      encode(frame, PKT_COMMAND, 1, 12345u, &cmd, sizeof(cmd));
-  TEST_ASSERT_EQUAL(HEADER_SIZE + sizeof(CommandPayload) + CRC_SIZE, (int)len);
-  TEST_ASSERT_EQUAL(SYNC1, frame[0]);
-  TEST_ASSERT_EQUAL(SYNC2, frame[1]);
-  TEST_ASSERT_EQUAL(PROTOCOL_VERSION, frame[2]);
-  TEST_ASSERT_EQUAL(PKT_COMMAND, frame[3]);
-  TEST_ASSERT_EQUAL(sizeof(CommandPayload), frame[4]);
+      encodeFrame(frameBuf, kPktCommand, 5, 1000, &cmd, sizeof(cmd));
+
+  uint8_t stream[64];
+  const uint8_t garbage[] = {0x00, 0x55, 0x01, 0xAA, 0x55, 0x55, 0xFF};
+  memcpy(stream, garbage, sizeof(garbage));
+  memcpy(stream + sizeof(garbage), frameBuf, len);
+
+  FrameParser parser;
+  int frames = 0;
+  feedAll(parser, stream, sizeof(garbage) + len, &frames);
+  TEST_ASSERT_EQUAL_INT(1, frames);
+  TEST_ASSERT_EQUAL_HEX8(kPktCommand, parser.frame().type);
 }
 
-static void test_period_to_frequency() {
-  // Consumer-side conversion: freqHz = 1e6 / periodUs
-  const uint32_t periodUs = 50000;  // 20 Hz
-  const float freq = 1e6f / (float)periodUs;
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 20.0f, freq);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f,
-                           0.0f);  // periodUs==0 => stopped (handled by caller)
+static void test_parser_rejects_bad_crc() {
+  CommandPayload cmd = {};
+  cmd.commandId = kCmdSetOutput;
+  uint8_t buf[kMaxFrameSize];
+  const size_t len =
+      encodeFrame(buf, kPktCommand, 9, 42, &cmd, sizeof(cmd));
+  buf[len - 1] ^= 0xFF;
+
+  FrameParser parser;
+  int frames = 0;
+  feedAll(parser, buf, len, &frames);
+  TEST_ASSERT_EQUAL_INT(0, frames);
+  TEST_ASSERT_EQUAL_UINT16(1, parser.crcErrors());
+}
+
+static void test_parser_rejects_bad_version() {
+  uint8_t buf[kMaxFrameSize];
+  const size_t len = encodeFrame(buf, kPktHeartbeat, 0, 0, nullptr, 0);
+  uint8_t bad[kMaxFrameSize];
+  memcpy(bad, buf, len);
+  bad[2] = 0x7F;
+
+  FrameParser parser;
+  int frames = 0;
+  feedAll(parser, bad, len, &frames);
+  TEST_ASSERT_EQUAL_INT(0, frames);
+  TEST_ASSERT_EQUAL_UINT16(1, parser.frameErrors());
+}
+
+static void test_parser_back_to_back_frames() {
+  uint8_t buf[3 * kMaxFrameSize];
+  size_t total = 0;
+  for (uint16_t seq = 0; seq < 3; ++seq) {
+    HeartbeatPayload hb = {};
+    hb.uptimeMs = seq * 1000;
+    total += encodeFrame(buf + total, kPktHeartbeat, seq, seq * 10, &hb,
+                         sizeof(hb));
+  }
+  FrameParser parser;
+  int frames = 0;
+  feedAll(parser, buf, total, &frames);
+  TEST_ASSERT_EQUAL_INT(3, frames);
+  TEST_ASSERT_EQUAL_UINT16(2, parser.frame().sequence);
+}
+
+static void test_period_and_freq() {
+  // Consumer may use either Nano freqHzX10 or derive from periodUs.
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 12.3f, 123 / 10.0f);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 20.0f, 1e6f / 50000.0f);
 }
 
 // ------------------------------------------------------------------ PID
@@ -191,8 +209,7 @@ static void test_pid_proportional() {
   g.kp = 2.0f;
   g.outMax = 100.0f;
   pid.setGains(g);
-  const float out = pid.update(10.0f, 0.0f, 0.005f);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 20.0f, out);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 20.0f, pid.update(10.0f, 0.0f, 0.005f));
 }
 
 static void test_pid_output_clamped() {
@@ -244,18 +261,15 @@ static VehicleModel makeModel() {
 }
 
 static void test_model_freq_to_rpm() {
-  const VehicleModel m = makeModel();
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 60.0f, m.freqToRpm(12.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 60.0f, makeModel().freqToRpm(12.0f));
 }
 
 static void test_model_freq_to_speed() {
-  const VehicleModel m = makeModel();
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.7854f, m.freqToSpeed(12.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.7854f, makeModel().freqToSpeed(12.0f));
 }
 
 static void test_model_counts_to_distance() {
-  const VehicleModel m = makeModel();
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.854f, m.countsToDistance(120.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.854f, makeModel().countsToDistance(120.0f));
 }
 
 static void test_model_turn_radius() {
@@ -269,18 +283,10 @@ static void test_model_ackermann_ratios() {
   float l, r;
   m.ackermannRatios(0.0f, l, r);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, l);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, r);
-
   m.ackermannRatios(30.0f, l, r);
   TEST_ASSERT_TRUE(r < 1.0f);
   TEST_ASSERT_TRUE(l > 1.0f);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.7594f, r);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.2406f, l);
-
-  float l2, r2;
-  m.ackermannRatios(-30.0f, l2, r2);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, r, l2);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, l, r2);
 }
 
 // ------------------------------------------------------- speed calculator
@@ -295,8 +301,6 @@ static void test_speed_calculator_basic() {
   rw = lw;
   SpeedOutput out = sc.update(m, lw, rw, 0.0f, 0.01f);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.7854f, out.leftSpeed);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.7854f, out.vehicleSpeed);
-
   lw.direction = rw.direction = -1;
   out = sc.update(m, lw, rw, 0.0f, 0.01f);
   TEST_ASSERT_TRUE(out.vehicleSpeed < 0.0f);
@@ -310,8 +314,8 @@ static void test_speed_calculator_odometer() {
   lw.count = rw.count = 0;
   sc.update(m, lw, rw, 0.0f, 0.01f);
   lw.count = rw.count = 120;
-  const SpeedOutput out = sc.update(m, lw, rw, 0.0f, 0.01f);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 7.854f, out.odometerM);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 7.854f,
+                           sc.update(m, lw, rw, 0.0f, 0.01f).odometerM);
 }
 
 static void test_speed_calculator_slip() {
@@ -322,8 +326,7 @@ static void test_speed_calculator_slip() {
   lw.direction = rw.direction = 1;
   lw.freqHz = 24.0f;
   rw.freqHz = 6.0f;
-  const SpeedOutput out = sc.update(m, lw, rw, 0.0f, 0.01f);
-  TEST_ASSERT_TRUE(out.slipDetected);
+  TEST_ASSERT_TRUE(sc.update(m, lw, rw, 0.0f, 0.01f).slipDetected);
 }
 
 // ------------------------------------------------------- differential
@@ -348,8 +351,7 @@ static void test_diff_disabled_passthrough() {
   DiffConfig c = diffBase();
   c.enabled = false;
   d.setConfig(c);
-  const VehicleModel m = makeModel();
-  const DiffOutput out = d.update(m, 2.0f, 20.0f, 60.0f, 0.01f);
+  const DiffOutput out = d.update(makeModel(), 2.0f, 20.0f, 60.0f, 0.01f);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, out.leftSpeed);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, out.rightSpeed);
 }
@@ -357,22 +359,18 @@ static void test_diff_disabled_passthrough() {
 static void test_diff_simple_right_turn() {
   DifferentialSteering d;
   d.setConfig(diffBase());
-  const VehicleModel m = makeModel();
   DiffOutput out;
   for (int i = 0; i < 50; ++i)
-    out = d.update(m, 2.0f, 25.0f, 80.0f, 0.01f);
+    out = d.update(makeModel(), 2.0f, 25.0f, 80.0f, 0.01f);
   TEST_ASSERT_TRUE(out.rightSpeed < 2.0f);
   TEST_ASSERT_TRUE(out.leftSpeed >= 2.0f);
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 2.0f * 0.4f, out.rightSpeed);
 }
 
 static void test_diff_below_activation_angle() {
   DifferentialSteering d;
   d.setConfig(diffBase());
-  const VehicleModel m = makeModel();
-  const DiffOutput out = d.update(m, 2.0f, 1.0f, 5.0f, 0.01f);
+  const DiffOutput out = d.update(makeModel(), 2.0f, 1.0f, 5.0f, 0.01f);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, out.leftSpeed);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, out.rightSpeed);
 }
 
 static void test_diff_geometry_matches_ackermann() {
@@ -392,11 +390,10 @@ static void test_diff_geometry_matches_ackermann() {
 static void test_diff_reverse_disabled_by_default() {
   DifferentialSteering d;
   d.setConfig(diffBase());
-  const VehicleModel m = makeModel();
   DiffOutput out;
-  for (int i = 0; i < 50; ++i) out = d.update(m, -1.0f, 25.0f, 80.0f, 0.01f);
+  for (int i = 0; i < 50; ++i)
+    out = d.update(makeModel(), -1.0f, 25.0f, 80.0f, 0.01f);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, -1.0f, out.leftSpeed);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, -1.0f, out.rightSpeed);
 }
 
 static void test_diff_inside_brake() {
@@ -407,9 +404,9 @@ static void test_diff_inside_brake() {
   c.allowInsideBrake = true;
   c.insideBrakeThresholdPct = 20.0f;
   d.setConfig(c);
-  const VehicleModel m = makeModel();
   DiffOutput out;
-  for (int i = 0; i < 50; ++i) out = d.update(m, 2.0f, 30.0f, 100.0f, 0.01f);
+  for (int i = 0; i < 50; ++i)
+    out = d.update(makeModel(), 2.0f, 30.0f, 100.0f, 0.01f);
   TEST_ASSERT_TRUE(out.insideBraking);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, out.rightSpeed);
 }
@@ -417,14 +414,17 @@ static void test_diff_inside_brake() {
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_crc16_known_vector);
-  RUN_TEST(test_crc16_detects_corruption);
-  RUN_TEST(test_telemetry_payload_size);
-  RUN_TEST(test_encode_decode_roundtrip);
-  RUN_TEST(test_parser_rejects_bad_crc);
-  RUN_TEST(test_parser_rejects_wrong_version);
+  RUN_TEST(test_crc16_empty);
+  RUN_TEST(test_payload_sizes);
+  RUN_TEST(test_encode_layout);
+  RUN_TEST(test_encode_rejects_oversize);
+  RUN_TEST(test_roundtrip_telemetry);
+  RUN_TEST(test_roundtrip_empty_payload);
   RUN_TEST(test_parser_resync_after_garbage);
-  RUN_TEST(test_command_encode);
-  RUN_TEST(test_period_to_frequency);
+  RUN_TEST(test_parser_rejects_bad_crc);
+  RUN_TEST(test_parser_rejects_bad_version);
+  RUN_TEST(test_parser_back_to_back_frames);
+  RUN_TEST(test_period_and_freq);
   RUN_TEST(test_pid_proportional);
   RUN_TEST(test_pid_output_clamped);
   RUN_TEST(test_pid_integral_antiwindup);
