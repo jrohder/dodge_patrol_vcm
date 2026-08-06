@@ -48,8 +48,9 @@ jobs:
           VERSION=$(git describe --tags --always)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           cp .pio/build/esp32s3/firmware.bin "dodge_patrol_vcm-${VERSION}.bin"
-          # Merged image for the initial USB flash (bootloader+partitions+app)
-          python -m esptool --chip esp32s3 merge_bin \
+          # Merged image for the initial USB flash (bootloader+partitions+app),
+          # using the esptool bundled with the PlatformIO toolchain
+          python ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 merge_bin \
             -o "dodge_patrol_vcm-${VERSION}-factory.bin" \
             0x0000 .pio/build/esp32s3/bootloader.bin \
             0x8000 .pio/build/esp32s3/partitions.bin \
