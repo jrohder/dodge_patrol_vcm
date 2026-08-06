@@ -63,20 +63,37 @@ struct DriveTelemetry {
 
 struct NanoTelemetry {
   uint16_t rcUs[6] = {1500, 1500, 1500, 1500, 1500, 1500};
+  uint8_t rcValidMask = 0;  ///< per-channel live-signal bits from the Nano
   float rcSteering = 0.0f;  ///< -1..1 mapped
   float rcThrottle = 0.0f;
   bool rcValid = false;
+  // Wheels: Nano reports pulse period in MICROSECONDS (0 = stopped);
+  // frequency is derived on the ESP32 (1e6 / periodUs).
+  uint32_t leftPeriodUs = 0, rightPeriodUs = 0;
   float leftFreqHz = 0.0f, rightFreqHz = 0.0f;
   int8_t leftDir = 0, rightDir = 0;
   uint32_t leftCount = 0, rightCount = 0;
-  uint16_t adc[4] = {0, 0, 0, 0};
-  uint16_t faultFlags = 0;
+  uint16_t adc[6] = {0, 0, 0, 0, 0, 0};
+  uint8_t digitalIn = 0, digitalOut = 0;
+  uint16_t faultBits = 0;
+  uint8_t statusBits = 0;
+  // Nano health (from the 63-byte telemetry payload)
+  uint8_t watchdogResets = 0;
+  uint16_t nanoRxCrcErrors = 0;  ///< CRC errors the Nano saw on its RX side
+  uint16_t nanoLoopMaxUs = 0;
+  uint8_t nanoCpuPct = 0;
+  uint32_t nanoUptimeMs = 0;
+  uint8_t eventCount = 0;  ///< entries in the Nano event log
   uint8_t protocolVersion = 0;
   uint8_t nanoFwMajor = 0, nanoFwMinor = 0;
+  // ESP32-side link statistics
   uint32_t packetsReceived = 0, packetsLost = 0;
-  uint32_t crcErrors = 0, seqErrors = 0, timeouts = 0;
+  uint32_t crcErrors = 0, seqErrors = 0, resyncs = 0, versionErrors = 0;
+  uint32_t eventsReceived = 0;
   uint32_t lastPacketMs = 0;
+  uint32_t timestampUs = 0;  ///< Nano micros() of the latest frame
   float packetRateHz = 0.0f;
+  float jitterUs = 0.0f;  ///< transport latency jitter estimate
   bool online = false;
 };
 

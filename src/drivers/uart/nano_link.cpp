@@ -1,100 +1,121 @@
 #include "drivers/uart/nano_link.h"
 
+#include <cstring>
+
 #include "core/pins.h"
-#include "drivers/uart/crc16.h"
 #include "services/logger.h"
 
 namespace vcm {
+
+using namespace vcmproto;
 
 NanoLink nano;
 
 static HardwareSerial& kUart = Serial1;
 
 void NanoLink::begin() {
-  kUart.begin(NANO_BAUD, SERIAL_8N1, pins::NANO_RX, pins::NANO_TX);
+  kUart.begin(DEFAULT_BAUD, SERIAL_8N1, pins::NANO_RX, pins::NANO_TX);
   kUart.setRxBufferSize(1024);
-  LOGI("NANO", "UART link @ %lu baud (RX=%d TX=%d)",
-       (unsigned long)NANO_BAUD, pins::NANO_RX, pins::NANO_TX);
+  LOGI("NANO", "UART link @ %lu baud, protocol v%u (RX=%d TX=%d)",
+       (unsigned long)DEFAULT_BAUD, PROTOCOL_VERSION, pins::NANO_RX,
+       pins::NANO_TX);
 }
 
 void NanoLink::poll() {
+  Packet pkt;
   while (kUart.available() > 0) {
-    const uint8_t byte = (uint8_t)kUart.read();
-
-    // Resynchronize on the magic word (0x55 0xAA little-endian)
-    if (bufLen_ == 0) {
-      if (byte != 0x55) continue;
-    } else if (bufLen_ == 1) {
-      if (byte != 0xAA) {
-        bufLen_ = 0;
-        if (byte == 0x55) bufLen_ = 1;  // could be start of next frame
-        continue;
-      }
-    }
-    buf_[bufLen_++] = byte;
-
-    if (bufLen_ == sizeof(NanoTelemetryPacket)) {
-      bufLen_ = 0;
-      NanoTelemetryPacket pkt;
-      memcpy(&pkt, buf_, sizeof(pkt));
-      const uint16_t expected =
-          crc16(buf_, sizeof(NanoTelemetryPacket) - sizeof(uint16_t));
-      if (pkt.crc != expected) {
-        crcErrors_++;
-        continue;
-      }
-      handlePacket(pkt);
-    }
+    if (parser_.feed((uint8_t)kUart.read(), pkt)) handlePacket(pkt);
+  }
+  // Protocol mismatch is latched while wrong-version frames keep arriving
+  if (parser_.stats().versionErrors != lastVersionErrors_) {
+    if (!protocolMismatch_)
+      LOGE("NANO", "Protocol mismatch: ESP32 speaks v%u, Nano sends other",
+           PROTOCOL_VERSION);
+    protocolMismatch_ = true;
+    lastVersionErrors_ = parser_.stats().versionErrors;
   }
 }
 
-void NanoLink::handlePacket(const NanoTelemetryPacket& pkt) {
-  if (pkt.version != NANO_PROTOCOL_VERSION) {
-    if (!protocolMismatch_)
-      LOGE("NANO", "Protocol mismatch: Nano v%u, ESP32 v%u", pkt.version,
-           NANO_PROTOCOL_VERSION);
-    protocolMismatch_ = true;
-    return;
-  }
+void NanoLink::handlePacket(const Packet& pkt) {
+  // Any valid same-version frame clears a previous mismatch latch
   protocolMismatch_ = false;
 
   if (haveSeq_) {
-    const uint16_t gap = (uint16_t)(pkt.seq - lastSeq_);
+    const uint16_t gap = (uint16_t)(pkt.header.seq - lastSeq_);
     if (gap == 0) {
       seqErrors_++;
     } else if (gap > 1) {
       packetsLost_ += gap - 1;
     }
   }
-  lastSeq_ = pkt.seq;
+  lastSeq_ = pkt.header.seq;
   haveSeq_ = true;
 
-  latest_ = pkt;
-  lastPacketMs_ = millis();
-  packetsReceived_++;
+  if (const TelemetryPayload* t = pkt.asTelemetry()) {
+    handleTelemetry(pkt, *t);
+  } else if (const EventPayload* e = pkt.asEvent()) {
+    eventsReceived_++;
+    events_[eventHead_] = *e;
+    eventHead_ = (eventHead_ + 1) % EVENT_RING;
+    if (eventCount_ < EVENT_RING) eventCount_++;
+    LOGW("NANO", "Nano event 0x%02X data %02X %02X %02X @ %lu us", e->code,
+         e->data[0], e->data[1], e->data[2], (unsigned long)e->timestampUs);
+  } else if (const AckPayload* a = pkt.asAck()) {
+    acksReceived_++;
+    if (a->status != 0)
+      LOGW("NANO", "Nano NACK cmd 0x%02X status %u (seq %u)", a->command,
+           a->status, a->ackSeq);
+  }
+}
+
+void NanoLink::handleTelemetry(const Packet& pkt, const TelemetryPayload& t) {
+  const uint32_t nowUs = micros();
+  const uint32_t nowMs = millis();
+
+  // Latency jitter: compare local inter-arrival vs Nano inter-timestamp
+  if (lastPacketMs_ != 0) {
+    const uint32_t localDt = nowUs - lastArrivalUs_;
+    const uint32_t nanoDt = pkt.header.timestampUs - lastTimestampUs_;
+    const float dev = fabsf((float)localDt - (float)nanoDt);
+    if (dev < 500000.0f)  // ignore wrap/startup outliers
+      jitterUs_ += 0.05f * (dev - jitterUs_);
+  }
+  lastArrivalUs_ = nowUs;
+  lastTimestampUs_ = pkt.header.timestampUs;
+
+  latest_ = t;
+  lastPacketMs_ = nowMs;
 
   // Packet rate over a 1 s window
   rateWindowCount_++;
-  const uint32_t now = millis();
-  if (now - rateWindowStart_ >= 1000) {
+  if (nowMs - rateWindowStart_ >= 1000) {
     packetRateHz_ =
-        rateWindowCount_ * 1000.0f / (float)(now - rateWindowStart_);
-    rateWindowStart_ = now;
+        rateWindowCount_ * 1000.0f / (float)(nowMs - rateWindowStart_);
+    rateWindowStart_ = nowMs;
     rateWindowCount_ = 0;
   }
 }
 
-void NanoLink::sendCommand(NanoCommand type, const uint8_t payload[4]) {
-  NanoCommandPacket cmd = {};
-  cmd.magic = NANO_MAGIC;
-  cmd.version = NANO_PROTOCOL_VERSION;
-  cmd.type = (uint8_t)type;
-  if (payload) memcpy(cmd.payload, payload, sizeof(cmd.payload));
-  cmd.crc = crc16((const uint8_t*)&cmd,
-                  sizeof(NanoCommandPacket) - sizeof(uint16_t));
-  kUart.write((const uint8_t*)&cmd, sizeof(cmd));
+size_t NanoLink::copyEvents(EventPayload* out, size_t max) const {
+  const size_t n = eventCount_ < max ? eventCount_ : max;
+  for (size_t i = 0; i < n; ++i) {
+    // oldest first
+    const size_t idx = (eventHead_ + EVENT_RING - eventCount_ + i) % EVENT_RING;
+    out[i] = events_[idx];
+  }
+  return n;
 }
 
-void NanoLink::sendHeartbeat() { sendCommand(NanoCommand::HEARTBEAT); }
+void NanoLink::sendCommand(Command cmd, const uint8_t args[4]) {
+  CommandPayload p = {};
+  p.command = (uint8_t)cmd;
+  if (args) memcpy(p.args, args, sizeof(p.args));
+  uint8_t frame[MAX_FRAME];
+  const size_t len =
+      encode(frame, PKT_COMMAND, txSeq_++, micros(), &p, sizeof(p));
+  kUart.write(frame, len);
+}
+
+void NanoLink::sendHeartbeat() { sendCommand(CMD_HEARTBEAT); }
 
 }  // namespace vcm

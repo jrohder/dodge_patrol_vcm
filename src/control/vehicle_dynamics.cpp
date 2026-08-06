@@ -122,14 +122,15 @@ void VehicleDynamics::step() {
   lastStepMs_ = now;
   dt = constrain(dt, 0.001f, 0.1f);
 
-  // --- inputs from the Nano -------------------------------------------------
-  const NanoTelemetryPacket& pkt = nano.latest();
+  // --- inputs from the Nano (shared protocol v2 telemetry) -------------------
+  const vcmproto::TelemetryPayload& pkt = nano.latest();
   const bool nanoOnline = nano.online((uint32_t)config.i(SAF_NANO_TIMEOUT));
 
   const int chS = constrain(config.i(RC_CH_STEER), 1, 6) - 1;
   const int chT = constrain(config.i(RC_CH_THROTTLE), 1, 6) - 1;
-  const bool rcSignal = nanoOnline && !(pkt.faultFlags & NF_RC_LOST) &&
-                        pkt.rcUs[chT] > 800;
+  const bool rcSignal = nanoOnline &&
+                        !(pkt.faultBits & vcmproto::FB_RC_LOST) &&
+                        (pkt.rcValidMask & (1u << chT)) && pkt.rcUs[chT] > 800;
   const float rcThrottle =
       rcSignal ? mapRcChannel(pkt.rcUs[chT], config.b(RC_INV_THROTTLE)) : 0.0f;
   const float rcSteering =
@@ -154,13 +155,15 @@ void VehicleDynamics::step() {
                                          manualActive);
 
   // --- speed measurement --------------------------------------------------------
+  // Nano reports the hall pulse period in microseconds (uint32, 0 =
+  // stopped); frequency is derived here on the ESP32.
   WheelInput lw, rw;
-  lw.freqHz = pkt.leftFreqX10 / 10.0f;
-  lw.direction = pkt.leftDir;
-  lw.count = pkt.leftCount;
-  rw.freqHz = pkt.rightFreqX10 / 10.0f;
-  rw.direction = pkt.rightDir;
-  rw.count = pkt.rightCount;
+  lw.freqHz = pkt.left.periodUs > 0 ? 1e6f / (float)pkt.left.periodUs : 0.0f;
+  lw.direction = pkt.left.direction;
+  lw.count = pkt.left.count;
+  rw.freqHz = pkt.right.periodUs > 0 ? 1e6f / (float)pkt.right.periodUs : 0.0f;
+  rw.direction = pkt.right.direction;
+  rw.count = pkt.right.count;
   const SpeedOutput spd = speedCalc_.update(
       model_, lw, rw, steering.estimatedAngleDeg(), dt);
 
@@ -219,26 +222,43 @@ void VehicleDynamics::step() {
     t.steering.wheelInputPct = manualSteering * 100.0f;
 
     t.nano.rcValid = rcSignal;
+    t.nano.rcValidMask = pkt.rcValidMask;
     t.nano.rcThrottle = rcThrottle;
     t.nano.rcSteering = rcSteering;
     memcpy((void*)t.nano.rcUs, pkt.rcUs, sizeof(t.nano.rcUs));
+    t.nano.leftPeriodUs = pkt.left.periodUs;
+    t.nano.rightPeriodUs = pkt.right.periodUs;
     t.nano.leftFreqHz = lw.freqHz;
     t.nano.rightFreqHz = rw.freqHz;
-    t.nano.leftDir = pkt.leftDir;
-    t.nano.rightDir = pkt.rightDir;
-    t.nano.leftCount = pkt.leftCount;
-    t.nano.rightCount = pkt.rightCount;
+    t.nano.leftDir = pkt.left.direction;
+    t.nano.rightDir = pkt.right.direction;
+    t.nano.leftCount = pkt.left.count;
+    t.nano.rightCount = pkt.right.count;
     memcpy((void*)t.nano.adc, pkt.adc, sizeof(t.nano.adc));
-    t.nano.faultFlags = pkt.faultFlags;
-    t.nano.protocolVersion = pkt.version;
-    t.nano.nanoFwMajor = pkt.fwVersion >> 4;
-    t.nano.nanoFwMinor = pkt.fwVersion & 0x0F;
+    t.nano.digitalIn = pkt.digitalIn;
+    t.nano.digitalOut = pkt.digitalOut;
+    t.nano.faultBits = pkt.faultBits;
+    t.nano.statusBits = pkt.statusBits;
+    t.nano.watchdogResets = pkt.watchdogResets;
+    t.nano.nanoRxCrcErrors = pkt.rxCrcErrors;
+    t.nano.nanoLoopMaxUs = pkt.loopMaxUs;
+    t.nano.nanoCpuPct = pkt.cpuLoadPct;
+    t.nano.nanoUptimeMs = pkt.uptimeMs;
+    t.nano.eventCount = pkt.eventCount;
+    t.nano.protocolVersion = vcmproto::PROTOCOL_VERSION;
+    t.nano.nanoFwMajor = pkt.fwMajor;
+    t.nano.nanoFwMinor = pkt.fwMinor;
     t.nano.packetsReceived = nano.packetsReceived();
     t.nano.packetsLost = nano.packetsLost();
     t.nano.crcErrors = nano.crcErrors();
     t.nano.seqErrors = nano.seqErrors();
+    t.nano.resyncs = nano.resyncs();
+    t.nano.versionErrors = nano.versionErrors();
+    t.nano.eventsReceived = nano.eventsReceived();
     t.nano.lastPacketMs = nano.lastPacketMs();
+    t.nano.timestampUs = nano.lastTimestampUs();
     t.nano.packetRateHz = nano.packetRateHz();
+    t.nano.jitterUs = nano.jitterUs();
     t.nano.online = nanoOnline;
 
     t.system.state = safety.state();

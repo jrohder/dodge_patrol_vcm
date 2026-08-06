@@ -3,6 +3,24 @@
 All notable changes to the Dodge Patrol VCM firmware.
 Format: [Keep a Changelog](https://keepachangelog.com), versioning: semver.
 
+## [1.1.0] - 2026-08-06
+
+### Changed
+- **Nano UART protocol v2**: ESP32 now consumes the shared
+  `src/proto/protocol.{h,cpp}` module (same framing as
+  `vcm_extended_io`). Old 44-byte / millisecond protocol removed.
+- Telemetry payload is **63 bytes** with generic header (sync, type,
+  length, µs timestamp), `periodUs` wheel data (uint32), richer Nano
+  health (watchdog resets, loop max, CPU, event count).
+- Wheel frequency is derived on the ESP32: `freqHz = 1e6 / periodUs`.
+- Diagnostics page exposes packet loss, CRC failures, sequence gaps,
+  resyncs, version errors, latency jitter, watchdog resets, Nano RX CRC,
+  loop max, CPU, uptime, fault/status bits, and event counters.
+
+### Removed
+- `src/drivers/uart/nano_protocol.h` and standalone `crc16` driver
+  (replaced by the shared protocol module).
+
 ## [1.0.0] - 2026-08-06
 
 Initial release.
@@ -38,6 +56,7 @@ Initial release.
   manager.
 - Telemetry: canonical shared structure, configurable WS rate,
   pause/resume, 30 s pre-fault event recorder with CSV download.
+
 - OTA: local .bin upload + GitHub Releases check/install with semantic
   version comparison, dual OTA partitions and validation rollback.
 - CI: native unit tests + firmware build on every push; tagged releases

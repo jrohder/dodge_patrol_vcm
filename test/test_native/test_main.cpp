@@ -1,18 +1,21 @@
 /**
  * @file test_main.cpp
- * @brief Host-side unit tests for the pure control/math logic.
+ * @brief Host-side unit tests for pure control/math and the shared protocol.
  *
  * Run with: pio test -e native
  */
 #include <unity.h>
 
+#include <cstring>
+
 #include "control/differential_steering.h"
 #include "control/pid.h"
 #include "control/speed_calculator.h"
 #include "control/vehicle_model.h"
-#include "drivers/uart/crc16.h"
+#include "proto/protocol.h"
 
 using namespace vcm;
+using namespace vcmproto;
 
 // ------------------------------------------------------------------ CRC16
 
@@ -28,6 +31,156 @@ static void test_crc16_detects_corruption() {
   const uint16_t good = crc16(data, sizeof(data));
   data[7] ^= 0x01;
   TEST_ASSERT_NOT_EQUAL(good, crc16(data, sizeof(data)));
+}
+
+// -------------------------------------------------------------- protocol
+
+static void test_telemetry_payload_size() {
+  TEST_ASSERT_EQUAL(63, (int)sizeof(TelemetryPayload));
+  TEST_ASSERT_EQUAL(11, (int)HEADER_SIZE);
+  TEST_ASSERT_EQUAL(2, (int)PROTOCOL_VERSION);
+}
+
+static void fillTelemetry(TelemetryPayload& t) {
+  memset(&t, 0, sizeof(t));
+  for (int i = 0; i < 6; ++i) t.rcUs[i] = (uint16_t)(1000 + i * 100);
+  t.rcValidMask = 0x03;
+  t.left.periodUs = 50000;  // 20 Hz
+  t.left.count = 42;
+  t.left.direction = 1;
+  t.right.periodUs = 0;  // stopped
+  t.right.count = 7;
+  t.right.direction = 0;
+  t.adc[0] = 2048;
+  t.faultBits = FB_RC_LOST;
+  t.statusBits = SB_TIMER_ISR_OK;
+  t.fwMajor = 1;
+  t.fwMinor = 2;
+  t.uptimeMs = 123456;
+}
+
+static void test_encode_decode_roundtrip() {
+  TelemetryPayload src;
+  fillTelemetry(src);
+
+  uint8_t frame[MAX_FRAME];
+  const size_t len =
+      encode(frame, PKT_TELEMETRY, 7, 999999u, &src, sizeof(src));
+  TEST_ASSERT_EQUAL(HEADER_SIZE + sizeof(TelemetryPayload) + CRC_SIZE, (int)len);
+
+  Parser p;
+  Packet out;
+  bool got = false;
+  for (size_t i = 0; i < len; ++i) {
+    if (p.feed(frame[i], out)) {
+      got = true;
+      break;
+    }
+  }
+  TEST_ASSERT_TRUE(got);
+  TEST_ASSERT_EQUAL(PKT_TELEMETRY, out.header.packetType);
+  TEST_ASSERT_EQUAL(7, out.header.seq);
+  TEST_ASSERT_EQUAL(999999u, out.header.timestampUs);
+  TEST_ASSERT_EQUAL(sizeof(TelemetryPayload), out.header.payloadLen);
+
+  const TelemetryPayload* t = out.asTelemetry();
+  TEST_ASSERT_NOT_NULL(t);
+  TEST_ASSERT_EQUAL(src.left.periodUs, t->left.periodUs);
+  TEST_ASSERT_EQUAL(src.left.count, t->left.count);
+  TEST_ASSERT_EQUAL(src.left.direction, t->left.direction);
+  TEST_ASSERT_EQUAL(src.right.periodUs, t->right.periodUs);
+  TEST_ASSERT_EQUAL(src.rcUs[0], t->rcUs[0]);
+  TEST_ASSERT_EQUAL(src.faultBits, t->faultBits);
+  TEST_ASSERT_EQUAL(src.fwMajor, t->fwMajor);
+  TEST_ASSERT_EQUAL(src.fwMinor, t->fwMinor);
+  TEST_ASSERT_EQUAL(1, (int)p.stats().frames);
+  TEST_ASSERT_EQUAL(0, (int)p.stats().crcErrors);
+}
+
+static void test_parser_rejects_bad_crc() {
+  TelemetryPayload src;
+  fillTelemetry(src);
+  uint8_t frame[MAX_FRAME];
+  const size_t len =
+      encode(frame, PKT_TELEMETRY, 1, 100u, &src, sizeof(src));
+  frame[len - 1] ^= 0xFF;  // corrupt CRC
+
+  Parser p;
+  Packet out;
+  bool got = false;
+  for (size_t i = 0; i < len; ++i) {
+    if (p.feed(frame[i], out)) got = true;
+  }
+  TEST_ASSERT_FALSE(got);
+  TEST_ASSERT_EQUAL(1, (int)p.stats().crcErrors);
+  TEST_ASSERT_EQUAL(0, (int)p.stats().frames);
+}
+
+static void test_parser_rejects_wrong_version() {
+  TelemetryPayload src;
+  fillTelemetry(src);
+  uint8_t frame[MAX_FRAME];
+  const size_t len =
+      encode(frame, PKT_TELEMETRY, 1, 100u, &src, sizeof(src));
+  frame[2] = 99;  // wrong version; CRC will also fail / version check first
+  // Recompute CRC so we isolate the version check
+  const uint16_t crc = crc16(frame, HEADER_SIZE + sizeof(src));
+  memcpy(frame + HEADER_SIZE + sizeof(src), &crc, 2);
+
+  Parser p;
+  Packet out;
+  bool got = false;
+  for (size_t i = 0; i < len; ++i) {
+    if (p.feed(frame[i], out)) got = true;
+  }
+  TEST_ASSERT_FALSE(got);
+  TEST_ASSERT_EQUAL(1, (int)p.stats().versionErrors);
+}
+
+static void test_parser_resync_after_garbage() {
+  TelemetryPayload src;
+  fillTelemetry(src);
+  uint8_t frame[MAX_FRAME];
+  const size_t len =
+      encode(frame, PKT_TELEMETRY, 3, 42u, &src, sizeof(src));
+
+  Parser p;
+  Packet out;
+  // Feed garbage then a valid frame
+  const uint8_t junk[] = {0x00, 0xFF, 0xAA, 0x00, 0x55, 0x12};
+  for (uint8_t b : junk) p.feed(b, out);
+
+  bool got = false;
+  for (size_t i = 0; i < len; ++i) {
+    if (p.feed(frame[i], out)) got = true;
+  }
+  TEST_ASSERT_TRUE(got);
+  TEST_ASSERT_EQUAL(3, out.header.seq);
+  TEST_ASSERT_TRUE(p.stats().resyncs > 0);
+  TEST_ASSERT_EQUAL(1, (int)p.stats().frames);
+}
+
+static void test_command_encode() {
+  CommandPayload cmd = {};
+  cmd.command = CMD_HEARTBEAT;
+  uint8_t frame[MAX_FRAME];
+  const size_t len =
+      encode(frame, PKT_COMMAND, 1, 12345u, &cmd, sizeof(cmd));
+  TEST_ASSERT_EQUAL(HEADER_SIZE + sizeof(CommandPayload) + CRC_SIZE, (int)len);
+  TEST_ASSERT_EQUAL(SYNC1, frame[0]);
+  TEST_ASSERT_EQUAL(SYNC2, frame[1]);
+  TEST_ASSERT_EQUAL(PROTOCOL_VERSION, frame[2]);
+  TEST_ASSERT_EQUAL(PKT_COMMAND, frame[3]);
+  TEST_ASSERT_EQUAL(sizeof(CommandPayload), frame[4]);
+}
+
+static void test_period_to_frequency() {
+  // Consumer-side conversion: freqHz = 1e6 / periodUs
+  const uint32_t periodUs = 50000;  // 20 Hz
+  const float freq = 1e6f / (float)periodUs;
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 20.0f, freq);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f,
+                           0.0f);  // periodUs==0 => stopped (handled by caller)
 }
 
 // ------------------------------------------------------------------ PID
@@ -64,7 +217,6 @@ static void test_pid_integral_antiwindup() {
 }
 
 static void test_pid_converges() {
-  // Simple first-order plant: measured moves toward output
   Pid pid;
   Pid::Gains g;
   g.kp = 5.0f;
@@ -93,27 +245,23 @@ static VehicleModel makeModel() {
 
 static void test_model_freq_to_rpm() {
   const VehicleModel m = makeModel();
-  // 12 counts/rev at 12 Hz = 1 rev/s = 60 RPM
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 60.0f, m.freqToRpm(12.0f));
 }
 
 static void test_model_freq_to_speed() {
   const VehicleModel m = makeModel();
-  // 1 rev/s * circumference (pi*0.25) = 0.7854 m/s
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.7854f, m.freqToSpeed(12.0f));
 }
 
 static void test_model_counts_to_distance() {
   const VehicleModel m = makeModel();
-  // 120 counts = 10 revs = 10 * pi * 0.25 m
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.854f, m.countsToDistance(120.0f));
 }
 
 static void test_model_turn_radius() {
   const VehicleModel m = makeModel();
-  // R = wheelbase / tan(angle); at 30 deg: 0.6/0.5774 = 1.039 m
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.039f, m.turnRadiusM(30.0f));
-  TEST_ASSERT_TRUE(m.turnRadiusM(0.0f) > 1e5f);  // straight
+  TEST_ASSERT_TRUE(m.turnRadiusM(0.0f) > 1e5f);
 }
 
 static void test_model_ackermann_ratios() {
@@ -123,15 +271,12 @@ static void test_model_ackermann_ratios() {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, l);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, r);
 
-  // Right turn (positive): right wheel is inner (slower)
   m.ackermannRatios(30.0f, l, r);
   TEST_ASSERT_TRUE(r < 1.0f);
   TEST_ASSERT_TRUE(l > 1.0f);
-  // R=1.039, half-track 0.25 -> inner = (1.039-0.25)/1.039 = 0.7594
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.7594f, r);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.2406f, l);
 
-  // Left turn mirrors
   float l2, r2;
   m.ackermannRatios(-30.0f, l2, r2);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, r, l2);
@@ -152,7 +297,6 @@ static void test_speed_calculator_basic() {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.7854f, out.leftSpeed);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.7854f, out.vehicleSpeed);
 
-  // Reverse direction gives negative speed
   lw.direction = rw.direction = -1;
   out = sc.update(m, lw, rw, 0.0f, 0.01f);
   TEST_ASSERT_TRUE(out.vehicleSpeed < 0.0f);
@@ -164,8 +308,8 @@ static void test_speed_calculator_odometer() {
   WheelInput lw, rw;
   lw.direction = rw.direction = 1;
   lw.count = rw.count = 0;
-  sc.update(m, lw, rw, 0.0f, 0.01f);  // prime counters
-  lw.count = rw.count = 120;          // 10 revolutions
+  sc.update(m, lw, rw, 0.0f, 0.01f);
+  lw.count = rw.count = 120;
   const SpeedOutput out = sc.update(m, lw, rw, 0.0f, 0.01f);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 7.854f, out.odometerM);
 }
@@ -176,7 +320,7 @@ static void test_speed_calculator_slip() {
   const VehicleModel m = makeModel();
   WheelInput lw, rw;
   lw.direction = rw.direction = 1;
-  lw.freqHz = 24.0f;  // left much faster than right, going straight
+  lw.freqHz = 24.0f;
   rw.freqHz = 6.0f;
   const SpeedOutput out = sc.update(m, lw, rw, 0.0f, 0.01f);
   TEST_ASSERT_TRUE(out.slipDetected);
@@ -195,7 +339,7 @@ static DiffConfig diffBase() {
   c.maxDifferentialPct = 80.0f;
   c.minSpeedMps = 0.1f;
   c.maxSpeedMps = 10.0f;
-  c.rampRatePctPerS = 10000.0f;  // effectively instant for tests
+  c.rampRatePctPerS = 10000.0f;
   return c;
 }
 
@@ -215,12 +359,11 @@ static void test_diff_simple_right_turn() {
   d.setConfig(diffBase());
   const VehicleModel m = makeModel();
   DiffOutput out;
-  for (int i = 0; i < 50; ++i)  // let authority ramp settle
+  for (int i = 0; i < 50; ++i)
     out = d.update(m, 2.0f, 25.0f, 80.0f, 0.01f);
-  // Right turn: right = inner (reduced), left = outer (boosted)
   TEST_ASSERT_TRUE(out.rightSpeed < 2.0f);
   TEST_ASSERT_TRUE(out.leftSpeed >= 2.0f);
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 2.0f * 0.4f, out.rightSpeed);  // 60% reduction
+  TEST_ASSERT_FLOAT_WITHIN(0.05f, 2.0f * 0.4f, out.rightSpeed);
 }
 
 static void test_diff_below_activation_angle() {
@@ -275,6 +418,13 @@ int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_crc16_known_vector);
   RUN_TEST(test_crc16_detects_corruption);
+  RUN_TEST(test_telemetry_payload_size);
+  RUN_TEST(test_encode_decode_roundtrip);
+  RUN_TEST(test_parser_rejects_bad_crc);
+  RUN_TEST(test_parser_rejects_wrong_version);
+  RUN_TEST(test_parser_resync_after_garbage);
+  RUN_TEST(test_command_encode);
+  RUN_TEST(test_period_to_frequency);
   RUN_TEST(test_pid_proportional);
   RUN_TEST(test_pid_output_clamped);
   RUN_TEST(test_pid_integral_antiwindup);

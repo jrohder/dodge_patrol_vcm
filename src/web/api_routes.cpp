@@ -7,7 +7,9 @@
 #include "config/config_registry.h"
 #include "control/vehicle_dynamics.h"
 #include "core/version.h"
+#include "drivers/uart/nano_link.h"
 #include "drivers/wifi/wifi_manager.h"
+#include "proto/protocol.h"
 #include "services/calibration.h"
 #include "services/diagnostics.h"
 #include "services/event_recorder.h"
@@ -57,7 +59,7 @@ void VcmWebServer::setupApi() {
     doc["fw_version"] = VCM_FW_VERSION;
     doc["git_commit"] = VCM_GIT_COMMIT;
     doc["build_date"] = VCM_BUILD_DATE;
-    doc["protocol_version"] = VCM_PROTOCOL_VERSION;
+    doc["protocol_version"] = vcmproto::PROTOCOL_VERSION;
     doc["chip"] = ESP.getChipModel();
     doc["flash_kb"] = ESP.getFlashChipSize() / 1024;
     doc["sketch_kb"] = ESP.getSketchSize() / 1024;
@@ -226,6 +228,26 @@ void VcmWebServer::setupApi() {
     res->addHeader("Content-Disposition",
                    "attachment; filename=\"vcm_logs.txt\"");
     req->send(res);
+  });
+
+  // ---------------------------------------------------------------- nano events
+  server_.on("/api/nano/events", HTTP_GET, [](AsyncWebServerRequest* req) {
+    vcmproto::EventPayload events[NanoLink::EVENT_RING];
+    const size_t n = nano.copyEvents(events, NanoLink::EVENT_RING);
+    JsonDocument doc;
+    JsonArray arr = doc["events"].to<JsonArray>();
+    for (size_t i = 0; i < n; ++i) {
+      JsonObject o = arr.add<JsonObject>();
+      o["us"] = events[i].timestampUs;
+      o["code"] = events[i].code;
+      JsonArray d = o["data"].to<JsonArray>();
+      d.add(events[i].data[0]);
+      d.add(events[i].data[1]);
+      d.add(events[i].data[2]);
+    }
+    doc["received"] = nano.eventsReceived();
+    doc["acks"] = nano.acksReceived();
+    sendJson(req, doc);
   });
 
   // ---------------------------------------------------------------- recorder

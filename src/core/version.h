@@ -14,4 +14,5 @@
 #define VCM_BUILD_DATE "unknown"
 #endif
 
-#define VCM_PROTOCOL_VERSION 1  ///< Nano <-> ESP32 UART protocol version
+// The Nano <-> ESP32 UART protocol version is defined by the SHARED
+// protocol module: vcmproto::PROTOCOL_VERSION in src/proto/protocol.h.
