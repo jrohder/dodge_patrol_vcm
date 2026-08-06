@@ -1,0 +1,154 @@
+// Master parameter table for the Dodge Patrol VCM.
+//
+// This file is the SINGLE SOURCE OF TRUTH for all configuration.
+// It is included multiple times with different PARAM/SPARAM macro
+// definitions (X-macro pattern) to generate the enum, metadata table
+// and storage without duplication.
+//
+// PARAM(ID, key, name, units, type, default, min, max, level, flags, options, description)
+//   type:  PT_FLOAT | PT_INT | PT_BOOL | PT_ENUM
+//   level: PL_BASIC | PL_ADVANCED | PL_EXPERT
+//   flags: PF_NONE | PF_DANGER | PF_RESTART (bitwise-or)
+//   options: "A|B|C" for PT_ENUM, "" otherwise
+//
+// SPARAM(ID, key, name, default, level, flags, description)   [strings]
+//
+// clang-format off
+
+// ---------------------------------------------------------------- vehicle
+PARAM(VEH_WHEEL_DIAMETER, "vehicle.wheel_diameter", "Wheel Diameter", "m", PT_FLOAT, 0.25f, 0.05f, 1.0f, PL_BASIC, PF_NONE, "", "Rear wheel outer diameter.")
+PARAM(VEH_WHEELBASE, "vehicle.wheelbase", "Wheelbase", "m", PT_FLOAT, 0.60f, 0.2f, 3.0f, PL_BASIC, PF_NONE, "", "Distance between front and rear axles.")
+PARAM(VEH_TRACK_WIDTH, "vehicle.track_width", "Track Width", "m", PT_FLOAT, 0.50f, 0.2f, 2.0f, PL_BASIC, PF_NONE, "", "Distance between left and right rear wheels.")
+PARAM(VEH_MASS, "vehicle.mass", "Vehicle Mass", "kg", PT_FLOAT, 30.0f, 5.0f, 300.0f, PL_ADVANCED, PF_NONE, "", "Total vehicle mass including rider (future dynamics use).")
+PARAM(VEH_COG_HEIGHT, "vehicle.cog_height", "CoG Height", "m", PT_FLOAT, 0.20f, 0.05f, 1.0f, PL_EXPERT, PF_NONE, "", "Center of gravity height (future dynamics use).")
+
+// ---------------------------------------------------------------- drive
+PARAM(DRV_COUNTS_PER_REV, "drive.counts_per_rev", "Counts / Revolution", "counts", PT_FLOAT, 12.0f, 1.0f, 1000.0f, PL_BASIC, PF_NONE, "", "Hall pulse counts per wheel revolution. Firmware does not care how many magnets physically exist.")
+PARAM(DRV_GEAR_RATIO, "drive.gear_ratio", "Gear Ratio", ":1", PT_FLOAT, 1.0f, 0.1f, 100.0f, PL_ADVANCED, PF_NONE, "", "Motor revolutions per wheel revolution (1.0 when sensing at the wheel).")
+PARAM(DRV_LEFT_CAL, "drive.left_cal_factor", "Left Wheel Cal Factor", "x", PT_FLOAT, 1.0f, 0.5f, 2.0f, PL_ADVANCED, PF_NONE, "", "Left wheel speed scaling from the speed calibration wizard.")
+PARAM(DRV_RIGHT_CAL, "drive.right_cal_factor", "Right Wheel Cal Factor", "x", PT_FLOAT, 1.0f, 0.5f, 2.0f, PL_ADVANCED, PF_NONE, "", "Right wheel speed scaling from the speed calibration wizard.")
+PARAM(DRV_MAX_SPEED, "drive.max_speed", "Maximum Speed", "m/s", PT_FLOAT, 2.0f, 0.2f, 8.0f, PL_BASIC, PF_NONE, "", "Maximum permitted forward speed.")
+PARAM(DRV_MAX_REVERSE, "drive.max_reverse_speed", "Maximum Reverse Speed", "m/s", PT_FLOAT, 1.0f, 0.2f, 4.0f, PL_BASIC, PF_NONE, "", "Maximum permitted reverse speed.")
+PARAM(DRV_MAX_ACCEL, "drive.max_acceleration", "Maximum Acceleration", "m/s2", PT_FLOAT, 0.75f, 0.1f, 5.0f, PL_BASIC, PF_NONE, "", "Maximum permitted acceleration rate.")
+PARAM(DRV_MAX_DECEL, "drive.max_deceleration", "Maximum Deceleration", "m/s2", PT_FLOAT, 1.5f, 0.1f, 8.0f, PL_BASIC, PF_NONE, "", "Maximum permitted braking/deceleration rate.")
+PARAM(DRV_BRAKE_MODE, "drive.brake_mode", "Brake Mode", "", PT_ENUM, 1, 0, 1, PL_ADVANCED, PF_NONE, "COAST|BRAKE", "COAST = freewheel to stop, BRAKE = actively short motor (BTS7960 both-low).")
+PARAM(DRV_THROTTLE_DEADBAND, "drive.throttle_deadband", "Throttle Deadband", "%", PT_FLOAT, 5.0f, 0.0f, 30.0f, PL_ADVANCED, PF_NONE, "", "Throttle inputs below this are treated as zero.")
+PARAM(DRV_THROTTLE_EXPO, "drive.throttle_expo", "Throttle Expo", "", PT_FLOAT, 0.3f, 0.0f, 1.0f, PL_ADVANCED, PF_NONE, "", "0 = linear response, 1 = maximum smoothing around center.")
+PARAM(DRV_MAX_PWM, "drive.max_pwm", "Maximum Drive PWM", "%", PT_FLOAT, 100.0f, 10.0f, 100.0f, PL_EXPERT, PF_DANGER, "", "Hard ceiling on drive motor PWM. Reduce for commissioning.")
+PARAM(DRV_MIN_PWM, "drive.min_pwm", "Minimum Moving PWM", "%", PT_FLOAT, 8.0f, 0.0f, 40.0f, PL_EXPERT, PF_NONE, "", "PWM needed to overcome drivetrain stiction; applied when a wheel target is nonzero.")
+PARAM(DRV_SLIP_THRESHOLD, "drive.slip_threshold", "Slip Detect Threshold", "m/s", PT_FLOAT, 0.5f, 0.0f, 5.0f, PL_EXPERT, PF_NONE, "", "Unexplained left/right wheel speed difference that flags slip. 0 disables.")
+
+// ---------------------------------------------------------------- steering
+PARAM(STR_MAX_ANGLE, "steering.max_angle", "Maximum Steering Angle", "deg", PT_FLOAT, 30.0f, 5.0f, 60.0f, PL_BASIC, PF_NONE, "", "Road-wheel angle at full lock (used by the vehicle model).")
+PARAM(STR_RATE_LIMIT, "steering.rate_limit", "Steering Rate Limit", "%/s", PT_FLOAT, 150.0f, 10.0f, 1000.0f, PL_ADVANCED, PF_NONE, "", "Maximum rate of change of the steering position target.")
+PARAM(STR_PID_KP, "steering.pid_kp", "Steering P Gain", "", PT_FLOAT, 4.0f, 0.0f, 50.0f, PL_ADVANCED, PF_NONE, "", "Proportional gain of the actuator position loop.")
+PARAM(STR_PID_KI, "steering.pid_ki", "Steering I Gain", "", PT_FLOAT, 0.5f, 0.0f, 20.0f, PL_ADVANCED, PF_NONE, "", "Integral gain of the actuator position loop.")
+PARAM(STR_PID_KD, "steering.pid_kd", "Steering D Gain", "", PT_FLOAT, 0.05f, 0.0f, 5.0f, PL_ADVANCED, PF_NONE, "", "Derivative gain of the actuator position loop.")
+PARAM(STR_PID_IMAX, "steering.pid_imax", "Steering I Clamp", "%", PT_FLOAT, 30.0f, 0.0f, 100.0f, PL_EXPERT, PF_NONE, "", "Anti-windup clamp on the integral term.")
+PARAM(STR_DEADBAND, "steering.deadband", "Steering Deadband", "%", PT_FLOAT, 1.0f, 0.0f, 10.0f, PL_ADVANCED, PF_NONE, "", "Position error below which the actuator is not driven.")
+PARAM(STR_MAX_PWM, "steering.max_pwm", "Maximum Steering PWM", "%", PT_FLOAT, 100.0f, 10.0f, 100.0f, PL_EXPERT, PF_DANGER, "", "Hard ceiling on steering actuator PWM.")
+PARAM(STR_SOFT_MARGIN, "steering.soft_limit_margin", "Soft Limit Margin", "%", PT_FLOAT, 3.0f, 0.0f, 20.0f, PL_ADVANCED, PF_NONE, "", "Margin kept away from calibrated hard stops during normal operation.")
+PARAM(STR_INVERT, "steering.invert_output", "Invert Actuator Direction", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Invert actuator drive direction if wired reversed.")
+PARAM(STR_CENTER_TRIM, "steering.center_trim", "Center Fine Tune", "%", PT_FLOAT, 0.0f, -15.0f, 15.0f, PL_BASIC, PF_NONE, "", "Fine adjustment of steering center; watch the wheels while adjusting.")
+PARAM(STR_FEEDBACK_FILTER, "steering.feedback_filter", "Feedback Filter", "Hz", PT_FLOAT, 30.0f, 1.0f, 200.0f, PL_EXPERT, PF_NONE, "", "Low-pass cutoff for the Firgelli potentiometer signal.")
+PARAM(STR_FEEDBACK_MIN, "steering.feedback_min_valid", "Feedback Valid Min", "counts", PT_INT, 50, 0, 4095, PL_EXPERT, PF_NONE, "", "ADC readings below this indicate broken feedback wiring.")
+PARAM(STR_FEEDBACK_MAX, "steering.feedback_max_valid", "Feedback Valid Max", "counts", PT_INT, 4045, 0, 4095, PL_EXPERT, PF_NONE, "", "ADC readings above this indicate broken feedback wiring.")
+
+// steering wheel (P3022 manual input)
+PARAM(SW_MIN, "steering.wheel_min", "Wheel Input Min", "counts", PT_INT, 1024, 0, 4095, PL_ADVANCED, PF_NONE, "", "P3022 counts at full-left steering wheel input.")
+PARAM(SW_CENTER, "steering.wheel_center", "Wheel Input Center", "counts", PT_INT, 2048, 0, 4095, PL_ADVANCED, PF_NONE, "", "P3022 counts with the steering wheel centered.")
+PARAM(SW_MAX, "steering.wheel_max", "Wheel Input Max", "counts", PT_INT, 3072, 0, 4095, PL_ADVANCED, PF_NONE, "", "P3022 counts at full-right steering wheel input.")
+PARAM(SW_INVERT, "steering.wheel_invert", "Invert Wheel Input", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Invert the steering wheel direction.")
+PARAM(SW_DEADBAND, "steering.wheel_deadband", "Wheel Input Deadband", "%", PT_FLOAT, 3.0f, 0.0f, 20.0f, PL_ADVANCED, PF_NONE, "", "Steering wheel inputs below this are treated as centered.")
+
+// ---------------------------------------------------------------- differential
+PARAM(DIF_ENABLED, "diff.enabled", "Differential Steering", "", PT_BOOL, 0, 0, 1, PL_BASIC, PF_NONE, "", "Master enable for differential (torque-split) steering.")
+PARAM(DIF_ALGORITHM, "diff.algorithm", "Differential Algorithm", "", PT_ENUM, 1, 0, 2, PL_BASIC, PF_NONE, "OFF|SIMPLE|GEOMETRY", "SIMPLE = percentage based; GEOMETRY = Ackermann model using wheelbase/track width.")
+PARAM(DIF_ACT_ANGLE, "diff.activation_angle", "Activation Steering Angle", "deg", PT_FLOAT, 3.0f, 0.0f, 30.0f, PL_ADVANCED, PF_NONE, "", "No differential effect below this steering angle.")
+PARAM(DIF_FULL_ANGLE, "diff.full_effect_angle", "Full Effect Steering Angle", "deg", PT_FLOAT, 25.0f, 1.0f, 60.0f, PL_ADVANCED, PF_NONE, "", "Steering angle at which the differential effect reaches maximum.")
+PARAM(DIF_MAX_PCT, "diff.max_differential", "Maximum Differential", "%", PT_FLOAT, 50.0f, 0.0f, 100.0f, PL_ADVANCED, PF_NONE, "", "Upper bound on total wheel speed split authority.")
+PARAM(DIF_INSIDE_RED, "diff.inside_reduction", "Inside Wheel Reduction", "%", PT_FLOAT, 60.0f, 0.0f, 100.0f, PL_ADVANCED, PF_NONE, "", "Maximum inside wheel speed reduction (SIMPLE algorithm).")
+PARAM(DIF_OUTSIDE_BOOST, "diff.outside_boost", "Outside Wheel Boost", "%", PT_FLOAT, 10.0f, 0.0f, 30.0f, PL_ADVANCED, PF_NONE, "", "Maximum outside wheel speed boost, subject to overall limits.")
+PARAM(DIF_INSIDE_BRAKE, "diff.allow_inside_brake", "Allow Inside Wheel Brake", "", PT_BOOL, 0, 0, 1, PL_EXPERT, PF_DANGER, "", "Permit the inside wheel to transition to braking in aggressive turns.")
+PARAM(DIF_BRAKE_THRESH, "diff.inside_brake_threshold", "Inside Brake Threshold", "%", PT_FLOAT, 10.0f, 0.0f, 50.0f, PL_EXPERT, PF_NONE, "", "Inside wheel target below this fraction of speed transitions to braking.")
+PARAM(DIF_MIN_SPEED, "diff.min_activation_speed", "Minimum Activation Speed", "m/s", PT_FLOAT, 0.2f, 0.0f, 5.0f, PL_ADVANCED, PF_NONE, "", "Differential steering is disabled below this speed.")
+PARAM(DIF_MAX_SPEED, "diff.max_activation_speed", "Maximum Activation Speed", "m/s", PT_FLOAT, 8.0f, 0.5f, 10.0f, PL_ADVANCED, PF_NONE, "", "Differential steering is disabled above this speed.")
+PARAM(DIF_REVERSE, "diff.reverse_enabled", "Enable In Reverse", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Apply differential steering when reversing.")
+PARAM(DIF_RAMP, "diff.ramp_rate", "Ramp Rate", "%/s", PT_FLOAT, 200.0f, 10.0f, 1000.0f, PL_ADVANCED, PF_NONE, "", "How quickly differential authority ramps in/out.")
+PARAM(DIF_AGGR_ENABLE, "diff.aggressive_assist", "Aggressive Turn Assist", "", PT_BOOL, 0, 0, 1, PL_EXPERT, PF_DANGER, "", "Progressively increase differential authority near full steering lock.")
+PARAM(DIF_AGGR_START, "diff.aggressive_start", "Assist Start Demand", "%", PT_FLOAT, 80.0f, 50.0f, 100.0f, PL_EXPERT, PF_NONE, "", "Steering demand at which aggressive assist begins to ramp.")
+PARAM(DIF_AGGR_GAIN, "diff.aggressive_gain", "Assist Gain", "x", PT_FLOAT, 1.5f, 1.0f, 3.0f, PL_EXPERT, PF_NONE, "", "Authority multiplier at full steering lock.")
+
+// ---------------------------------------------------------------- safety
+PARAM(SAF_RC_TIMEOUT, "safety.rc_timeout", "RC Timeout", "ms", PT_INT, 500, 100, 5000, PL_BASIC, PF_NONE, "", "RC signal loss beyond this raises RC-001 while RC has control.")
+PARAM(SAF_NANO_TIMEOUT, "safety.nano_timeout", "Nano Timeout", "ms", PT_INT, 100, 30, 2000, PL_BASIC, PF_NONE, "", "Nano packet loss beyond this raises COM-001 and commands propulsion safe.")
+PARAM(SAF_WEB_TIMEOUT, "safety.web_heartbeat_timeout", "Web Control Timeout", "ms", PT_INT, 500, 100, 5000, PL_BASIC, PF_NONE, "", "Web remote heartbeat loss beyond this stops the vehicle when web control owns it.")
+PARAM(SAF_BATT_CUTOFF, "safety.battery_cutoff", "Battery Cutoff Voltage", "V", PT_FLOAT, 10.5f, 6.0f, 40.0f, PL_BASIC, PF_NONE, "", "Below this voltage propulsion is disabled (PWR-001).")
+PARAM(SAF_BATT_WARN, "safety.battery_warning", "Battery Warning Voltage", "V", PT_FLOAT, 11.2f, 6.0f, 40.0f, PL_BASIC, PF_NONE, "", "Below this voltage a low-battery warning is raised.")
+PARAM(SAF_MIN_HEAP, "safety.min_free_heap", "Minimum Free Heap", "kB", PT_INT, 20, 5, 200, PL_EXPERT, PF_NONE, "", "Free heap below this raises SYS-002.")
+
+// ---------------------------------------------------------------- current
+PARAM(CUR_SHUNT, "current.shunt_resistance", "Shunt Resistance", "mOhm", PT_FLOAT, 5.0f, 0.1f, 1000.0f, PL_EXPERT, PF_NONE, "", "INA3221 shunt resistor value (all channels).")
+PARAM(CUR_CH1_ROLE, "current.ch1_role", "Channel 1 Role", "", PT_ENUM, 0, 0, 2, PL_ADVANCED, PF_NONE, "LEFT_DRIVE|RIGHT_DRIVE|STEERING", "Semantic meaning of INA3221 channel 1.")
+PARAM(CUR_CH2_ROLE, "current.ch2_role", "Channel 2 Role", "", PT_ENUM, 1, 0, 2, PL_ADVANCED, PF_NONE, "LEFT_DRIVE|RIGHT_DRIVE|STEERING", "Semantic meaning of INA3221 channel 2.")
+PARAM(CUR_CH3_ROLE, "current.ch3_role", "Channel 3 Role", "", PT_ENUM, 2, 0, 2, PL_ADVANCED, PF_NONE, "LEFT_DRIVE|RIGHT_DRIVE|STEERING", "Semantic meaning of INA3221 channel 3.")
+PARAM(CUR_OFFSET, "current.offset", "Current Offset", "A", PT_FLOAT, 0.0f, -5.0f, 5.0f, PL_ADVANCED, PF_NONE, "", "Zero offset applied to all current readings (from current calibration).")
+PARAM(CUR_SCALE, "current.scale", "Current Scale", "x", PT_FLOAT, 1.0f, 0.5f, 2.0f, PL_ADVANCED, PF_NONE, "", "Scale factor applied to all current readings.")
+PARAM(CUR_DRIVE_WARN, "current.drive_warning", "Drive Current Warning", "A", PT_FLOAT, 10.0f, 0.5f, 100.0f, PL_ADVANCED, PF_NONE, "", "Drive motor current that logs a warning.")
+PARAM(CUR_DRIVE_LIMIT, "current.drive_limit", "Drive Current Limit", "A", PT_FLOAT, 15.0f, 0.5f, 100.0f, PL_ADVANCED, PF_DANGER, "", "Drive motor command is progressively reduced above this current.")
+PARAM(CUR_DRIVE_TRIP, "current.drive_trip", "Drive Current Trip", "A", PT_FLOAT, 25.0f, 1.0f, 150.0f, PL_ADVANCED, PF_DANGER, "", "Drive motor current that trips DRV-001/DRV-002 and stops the output.")
+PARAM(CUR_STEER_WARN, "current.steering_warning", "Steering Current Warning", "A", PT_FLOAT, 4.0f, 0.2f, 50.0f, PL_ADVANCED, PF_NONE, "", "Steering current that logs a warning.")
+PARAM(CUR_STEER_TRIP, "current.steering_trip", "Steering Current Trip", "A", PT_FLOAT, 8.0f, 0.5f, 50.0f, PL_ADVANCED, PF_DANGER, "", "Steering current that trips STR-002 and stops the actuator.")
+
+// ---------------------------------------------------------------- IMU
+PARAM(IMU_X_SRC, "imu.axis_x_source", "X Axis Source", "", PT_ENUM, 0, 0, 2, PL_ADVANCED, PF_NONE, "X|Y|Z", "Which sensor axis maps to vehicle longitudinal (X).")
+PARAM(IMU_Y_SRC, "imu.axis_y_source", "Y Axis Source", "", PT_ENUM, 1, 0, 2, PL_ADVANCED, PF_NONE, "X|Y|Z", "Which sensor axis maps to vehicle lateral (Y).")
+PARAM(IMU_Z_SRC, "imu.axis_z_source", "Z Axis Source", "", PT_ENUM, 2, 0, 2, PL_ADVANCED, PF_NONE, "X|Y|Z", "Which sensor axis maps to vehicle vertical (Z).")
+PARAM(IMU_INV_X, "imu.invert_x", "Invert X", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Invert the vehicle X axis.")
+PARAM(IMU_INV_Y, "imu.invert_y", "Invert Y", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Invert the vehicle Y axis.")
+PARAM(IMU_INV_Z, "imu.invert_z", "Invert Z", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Invert the vehicle Z axis.")
+PARAM(IMU_FILTER, "imu.filter", "IMU Filter", "Hz", PT_FLOAT, 10.0f, 1.0f, 100.0f, PL_EXPERT, PF_NONE, "", "Low-pass cutoff for accelerometer-derived pitch/roll.")
+
+// ---------------------------------------------------------------- RC
+PARAM(RC_CH_STEER, "rc.channel_steering", "Steering Channel", "", PT_INT, 1, 1, 6, PL_BASIC, PF_NONE, "", "RC channel used for steering (1-6).")
+PARAM(RC_CH_THROTTLE, "rc.channel_throttle", "Throttle Channel", "", PT_INT, 2, 1, 6, PL_BASIC, PF_NONE, "", "RC channel used for throttle (1-6).")
+PARAM(RC_MIN_US, "rc.pulse_min", "Pulse Minimum", "us", PT_INT, 1000, 800, 1500, PL_ADVANCED, PF_NONE, "", "RC pulse width at stick minimum.")
+PARAM(RC_CENTER_US, "rc.pulse_center", "Pulse Center", "us", PT_INT, 1500, 1200, 1800, PL_ADVANCED, PF_NONE, "", "RC pulse width at stick center.")
+PARAM(RC_MAX_US, "rc.pulse_max", "Pulse Maximum", "us", PT_INT, 2000, 1500, 2200, PL_ADVANCED, PF_NONE, "", "RC pulse width at stick maximum.")
+PARAM(RC_DEADBAND_US, "rc.deadband", "RC Deadband", "us", PT_INT, 30, 0, 200, PL_ADVANCED, PF_NONE, "", "Pulse deviation from center treated as neutral.")
+PARAM(RC_INV_STEER, "rc.invert_steering", "Invert RC Steering", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Invert the RC steering channel.")
+PARAM(RC_INV_THROTTLE, "rc.invert_throttle", "Invert RC Throttle", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Invert the RC throttle channel.")
+
+// ---------------------------------------------------------------- control arbitration
+PARAM(CTL_RC_ENABLED, "control.rc_enabled", "RC Control Enabled", "", PT_BOOL, 1, 0, 1, PL_BASIC, PF_NONE, "", "Allow the RC transmitter to drive the vehicle.")
+PARAM(CTL_MANUAL_ENABLED, "control.manual_enabled", "Manual Control Enabled", "", PT_BOOL, 0, 0, 1, PL_BASIC, PF_NONE, "", "Allow the in-vehicle steering wheel and pedal to drive the vehicle.")
+PARAM(CTL_WEB_ENABLED, "control.web_enabled", "Web Remote Enabled", "", PT_BOOL, 1, 0, 1, PL_BASIC, PF_NONE, "", "Allow the web dashboard virtual remote to drive the vehicle.")
+PARAM(CTL_RC_OVERRIDE, "control.rc_override", "RC Override", "", PT_BOOL, 1, 0, 1, PL_BASIC, PF_NONE, "", "RC transmitter takes control when moved away from neutral.")
+PARAM(CTL_OVERRIDE_THRESH, "control.rc_override_threshold", "Override Threshold", "%", PT_FLOAT, 15.0f, 5.0f, 50.0f, PL_ADVANCED, PF_NONE, "", "RC stick deflection that triggers override of other sources.")
+PARAM(CTL_OVERRIDE_HOLD, "control.rc_override_hold", "Override Hold Time", "ms", PT_INT, 2000, 0, 30000, PL_ADVANCED, PF_NONE, "", "RC retains control this long after returning to neutral.")
+PARAM(CTL_MANUAL_THROTTLE, "control.manual_throttle_level", "Manual Throttle Level", "%", PT_FLOAT, 60.0f, 10.0f, 100.0f, PL_BASIC, PF_NONE, "", "Throttle applied when the original pedal switch is pressed.")
+PARAM(CTL_SENSE_THRESH, "control.pedal_sense_threshold", "Pedal Sense Threshold", "counts", PT_INT, 512, 50, 1023, PL_EXPERT, PF_NONE, "", "Nano ADC threshold for detecting pedal/shifter motor-wire voltage.")
+
+// ---------------------------------------------------------------- web / telemetry
+PARAM(WEB_TELEM_RATE, "web.telemetry_rate", "Telemetry Rate", "Hz", PT_INT, 10, 1, 30, PL_ADVANCED, PF_NONE, "", "WebSocket telemetry update rate to the browser.")
+
+// ---------------------------------------------------------------- OTA
+PARAM(OTA_AUTO_CHECK, "ota.auto_check", "Auto Check Releases", "", PT_BOOL, 1, 0, 1, PL_BASIC, PF_NONE, "", "Periodically check GitHub Releases for newer firmware.")
+PARAM(OTA_PRERELEASE, "ota.allow_prerelease", "Allow Pre-releases", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Include pre-release versions when checking for updates.")
+
+// ---------------------------------------------------------------- logging
+PARAM(LOG_LEVEL, "log.level", "Log Level", "", PT_ENUM, 2, 0, 4, PL_BASIC, PF_NONE, "ERROR|WARN|INFO|DEBUG|TRACE", "Runtime logging verbosity.")
+
+// ---------------------------------------------------------------- wifi
+PARAM(WIFI_MODE, "wifi.mode", "WiFi Mode", "", PT_ENUM, 0, 0, 2, PL_BASIC, PF_RESTART, "AP|STA|AP_STA", "AP = vehicle hosts its own network; STA = join an existing network.")
+
+// ------------------------------------------------------------- strings
+SPARAM(S_VEHICLE_NAME, "vehicle.name", "Vehicle Name", "Dodge Patrol", PL_BASIC, PF_NONE, "Display name shown on the dashboard.")
+SPARAM(S_WIFI_AP_SSID, "wifi.ap_ssid", "AP SSID", "DodgePatrol-VCM", PL_BASIC, PF_RESTART, "Access point network name hosted by the vehicle.")
+SPARAM(S_WIFI_AP_PASS, "wifi.ap_password", "AP Password", "dodgepatrol", PL_BASIC, PF_RESTART, "Access point password (min 8 characters).")
+SPARAM(S_WIFI_STA_SSID, "wifi.sta_ssid", "Home WiFi SSID", "", PL_BASIC, PF_RESTART, "Existing WiFi network to join (STA mode).")
+SPARAM(S_WIFI_STA_PASS, "wifi.sta_password", "Home WiFi Password", "", PL_BASIC, PF_RESTART, "Password for the existing WiFi network.")
+SPARAM(S_HOSTNAME, "wifi.hostname", "Hostname", "dodge-patrol", PL_ADVANCED, PF_RESTART, "mDNS hostname (http://dodge-patrol.local).")
+SPARAM(S_OTA_REPO, "ota.github_repo", "GitHub Repository", "jrohder/dodge_patrol_vcm", PL_ADVANCED, PF_NONE, "GitHub repository checked for firmware releases (owner/name).")
+
+// clang-format on
