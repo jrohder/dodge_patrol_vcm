@@ -7,7 +7,9 @@
 #include "config/config_registry.h"
 #include "control/vehicle_dynamics.h"
 #include "core/version.h"
+#include "drivers/uart/nano_link.h"
 #include "drivers/wifi/wifi_manager.h"
+#include "proto/protocol.h"
 #include "services/calibration.h"
 #include "services/diagnostics.h"
 #include "services/event_recorder.h"
@@ -57,7 +59,7 @@ void VcmWebServer::setupApi() {
     doc["fw_version"] = VCM_FW_VERSION;
     doc["git_commit"] = VCM_GIT_COMMIT;
     doc["build_date"] = VCM_BUILD_DATE;
-    doc["protocol_version"] = VCM_PROTOCOL_VERSION;
+    doc["protocol_version"] = veio::proto::kProtocolVersion;
     doc["chip"] = ESP.getChipModel();
     doc["flash_kb"] = ESP.getFlashChipSize() / 1024;
     doc["sketch_kb"] = ESP.getSketchSize() / 1024;
@@ -226,6 +228,35 @@ void VcmWebServer::setupApi() {
     res->addHeader("Content-Disposition",
                    "attachment; filename=\"vcm_logs.txt\"");
     req->send(res);
+  });
+
+  // ---------------------------------------------------------------- nano
+  server_.on("/api/nano/version", HTTP_GET, [](AsyncWebServerRequest* req) {
+    JsonDocument doc;
+    doc["have"] = nano.haveVersion();
+    if (nano.haveVersion()) {
+      const auto& v = nano.version();
+      doc["fw"] = String(v.fwMajor) + "." + String(v.fwMinor) + "." +
+                  String(v.fwPatch);
+      doc["protocol"] = v.protocolVersion;
+      doc["git_hash"] = v.gitHash;
+      doc["build_date"] = String(v.buildDate);
+      doc["build_time"] = String(v.buildTime);
+      doc["board_id"] = v.boardId;
+      doc["boot_reason"] = v.bootReason;
+    }
+    sendJson(req, doc);
+  });
+  server_.on("/api/nano/diagnostics", HTTP_GET,
+             [](AsyncWebServerRequest* req) {
+               // Request a single diagnostic snapshot from the Nano.
+               uint8_t args[4] = {0, 0, 0, 0};
+               nano.sendCommand(veio::proto::kCmdStartDiagnostics, args);
+               sendOk(req, true);
+             });
+  server_.on("/api/nano/ping", HTTP_POST, [](AsyncWebServerRequest* req) {
+    nano.sendPing();
+    sendOk(req, true);
   });
 
   // ---------------------------------------------------------------- recorder

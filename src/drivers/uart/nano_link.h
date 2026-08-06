@@ -1,60 +1,91 @@
 /**
  * @file nano_link.h
- * @brief UART link driver to the Nano R4 IO processor.
+ * @brief UART link driver to the Nano R4 extended-I/O processor.
  *
- * Handles byte-stream framing, CRC validation, sequence tracking, link
- * statistics and heartbeat transmission. Publishes decoded values into
- * the telemetry hub and exposes the latest packet for the control tasks.
+ * Thin transport wrapper around the SHARED protocol module
+ * (src/proto/protocol.{h,cpp} — copied verbatim from vcm_extended_io).
+ * All wire-format knowledge lives there.
  */
 #pragma once
 
 #include <Arduino.h>
 
-#include "drivers/uart/nano_protocol.h"
+#include "proto/protocol.h"
 
 namespace vcm {
 
 class NanoLink {
  public:
-  void begin();
+  static constexpr uint32_t DEFAULT_BAUD = 460800;
 
-  /// Poll the UART, parse frames. Call at >= 100 Hz.
+  void begin(uint32_t baud = DEFAULT_BAUD);
+
+  /// Drain UART RX into the shared FrameParser. Call at >= 100 Hz.
   void poll();
 
-  /// Send the heartbeat/command packet. Call at 100 Hz.
-  void sendHeartbeat();
-  void sendCommand(NanoCommand type, const uint8_t payload[4] = nullptr);
+  /// Send a framed command (keeps Nano output failsafe alive).
+  void sendCommand(veio::proto::CommandId cmd, const uint8_t args[4] = nullptr);
 
-  /// True if a valid packet arrived within timeoutMs.
+  /// Ping the Nano (preferred keepalive — Nano answers with COMMAND_ACK).
+  void sendPing();
+  void sendHeartbeat() { sendPing(); }  ///< alias used by the dynamics task
+
   bool online(uint32_t timeoutMs) const {
     return lastPacketMs_ != 0 && (millis() - lastPacketMs_) < timeoutMs;
   }
 
-  const NanoTelemetryPacket& latest() const { return latest_; }
-  uint32_t lastPacketMs() const { return lastPacketMs_; }
+  const veio::proto::TelemetryPayload& latest() const { return latest_; }
+  const veio::proto::HeartbeatPayload& heartbeat() const { return heartbeat_; }
+  const veio::proto::DiagnosticPayload& diagnostic() const { return diagnostic_; }
+  const veio::proto::VersionPayload& version() const { return version_; }
+  bool haveVersion() const { return haveVersion_; }
+  bool haveDiagnostic() const { return haveDiagnostic_; }
 
-  // link statistics
+  uint32_t lastPacketMs() const { return lastPacketMs_; }
+  uint32_t lastTimestampUs() const { return lastTimestampUs_; }
+  uint32_t lastHeartbeatMs() const { return lastHeartbeatMs_; }
+
+  // Link statistics --------------------------------------------------------
   uint32_t packetsReceived() const { return packetsReceived_; }
-  uint32_t crcErrors() const { return crcErrors_; }
+  uint32_t telemetryReceived() const { return telemetryReceived_; }
+  uint32_t crcErrors() const { return parser_.crcErrors(); }
+  uint32_t frameErrors() const { return parser_.frameErrors(); }
   uint32_t seqErrors() const { return seqErrors_; }
   uint32_t packetsLost() const { return packetsLost_; }
+  uint32_t acksReceived() const { return acksReceived_; }
+  uint32_t faultsReceived() const { return faultsReceived_; }
   float packetRateHz() const { return packetRateHz_; }
+  float jitterUs() const { return jitterUs_; }
   bool protocolMismatch() const { return protocolMismatch_; }
 
  private:
-  void handlePacket(const NanoTelemetryPacket& pkt);
+  void handleFrame(const veio::proto::Frame& frame);
+  void handleTelemetry(const veio::proto::Frame& frame,
+                       const veio::proto::TelemetryPayload& t);
+  void noteSequence(uint16_t seq);
 
-  uint8_t buf_[sizeof(NanoTelemetryPacket)];
-  size_t bufLen_ = 0;
-  NanoTelemetryPacket latest_ = {};
+  veio::proto::FrameParser parser_;
+  veio::proto::TelemetryPayload latest_ = {};
+  veio::proto::HeartbeatPayload heartbeat_ = {};
+  veio::proto::DiagnosticPayload diagnostic_ = {};
+  veio::proto::VersionPayload version_ = {};
+  bool haveVersion_ = false;
+  bool haveDiagnostic_ = false;
+  bool protocolMismatch_ = false;
+
   volatile uint32_t lastPacketMs_ = 0;
+  uint32_t lastHeartbeatMs_ = 0;
+  uint32_t lastTimestampUs_ = 0;
+  uint32_t lastArrivalUs_ = 0;
   uint16_t lastSeq_ = 0;
   bool haveSeq_ = false;
-  uint32_t packetsReceived_ = 0, crcErrors_ = 0, seqErrors_ = 0,
-           packetsLost_ = 0;
-  float packetRateHz_ = 0.0f;
+  uint32_t packetsReceived_ = 0, telemetryReceived_ = 0;
+  uint32_t seqErrors_ = 0, packetsLost_ = 0;
+  uint32_t acksReceived_ = 0, faultsReceived_ = 0;
+  float packetRateHz_ = 0.0f, jitterUs_ = 0.0f;
   uint32_t rateWindowStart_ = 0, rateWindowCount_ = 0;
-  bool protocolMismatch_ = false;
+  uint16_t txSeq_ = 0;
+  uint32_t baud_ = DEFAULT_BAUD;
 };
 
 extern NanoLink nano;

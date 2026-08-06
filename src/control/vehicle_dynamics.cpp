@@ -122,23 +122,26 @@ void VehicleDynamics::step() {
   lastStepMs_ = now;
   dt = constrain(dt, 0.001f, 0.1f);
 
-  // --- inputs from the Nano -------------------------------------------------
-  const NanoTelemetryPacket& pkt = nano.latest();
+  // --- inputs from the Nano (shared veio::proto telemetry) -------------------
+  const veio::proto::TelemetryPayload& pkt = nano.latest();
   const bool nanoOnline = nano.online((uint32_t)config.i(SAF_NANO_TIMEOUT));
 
   const int chS = constrain(config.i(RC_CH_STEER), 1, 6) - 1;
   const int chT = constrain(config.i(RC_CH_THROTTLE), 1, 6) - 1;
-  const bool rcSignal = nanoOnline && !(pkt.faultFlags & NF_RC_LOST) &&
-                        pkt.rcUs[chT] > 800;
+  const bool rcSignal =
+      nanoOnline && !(pkt.faultFlags & veio::proto::kFaultRcSignalLost) &&
+      (pkt.rcValidMask & (1u << chT)) && pkt.rcPulseUs[chT] > 800;
   const float rcThrottle =
-      rcSignal ? mapRcChannel(pkt.rcUs[chT], config.b(RC_INV_THROTTLE)) : 0.0f;
+      rcSignal ? mapRcChannel(pkt.rcPulseUs[chT], config.b(RC_INV_THROTTLE))
+               : 0.0f;
   const float rcSteering =
-      rcSignal ? mapRcChannel(pkt.rcUs[chS], config.b(RC_INV_STEER)) : 0.0f;
+      rcSignal ? mapRcChannel(pkt.rcPulseUs[chS], config.b(RC_INV_STEER))
+               : 0.0f;
 
   // Manual inputs: P3022 steering wheel + pedal via motor-wire sense ADCs
   const int senseThresh = config.i(CTL_SENSE_THRESH);
-  const bool pedalFwd = nanoOnline && pkt.adc[1] > senseThresh;
-  const bool pedalRev = nanoOnline && pkt.adc[2] > senseThresh;
+  const bool pedalFwd = nanoOnline && pkt.motorSenseAFilt > senseThresh;
+  const bool pedalRev = nanoOnline && pkt.motorSenseBFilt > senseThresh;
   const bool manualActive = pedalFwd || pedalRev;
   const float manualLevel = config.f(CTL_MANUAL_THROTTLE) / 100.0f;
   const float manualThrottle =
@@ -154,13 +157,22 @@ void VehicleDynamics::step() {
                                          manualActive);
 
   // --- speed measurement --------------------------------------------------------
+  // Prefer Nano-reported freqHzX10; fall back to 1e6/periodUs when needed.
   WheelInput lw, rw;
-  lw.freqHz = pkt.leftFreqX10 / 10.0f;
-  lw.direction = pkt.leftDir;
-  lw.count = pkt.leftCount;
-  rw.freqHz = pkt.rightFreqX10 / 10.0f;
-  rw.direction = pkt.rightDir;
-  rw.count = pkt.rightCount;
+  lw.freqHz = pkt.left.freqHzX10 > 0
+                  ? pkt.left.freqHzX10 / 10.0f
+                  : (pkt.left.periodUs > 0 ? 1e6f / (float)pkt.left.periodUs
+                                          : 0.0f);
+  lw.direction = pkt.left.direction;
+  lw.count = (uint32_t)(pkt.left.pulseCount < 0 ? -pkt.left.pulseCount
+                                                : pkt.left.pulseCount);
+  rw.freqHz = pkt.right.freqHzX10 > 0
+                  ? pkt.right.freqHzX10 / 10.0f
+                  : (pkt.right.periodUs > 0 ? 1e6f / (float)pkt.right.periodUs
+                                           : 0.0f);
+  rw.direction = pkt.right.direction;
+  rw.count = (uint32_t)(pkt.right.pulseCount < 0 ? -pkt.right.pulseCount
+                                                 : pkt.right.pulseCount);
   const SpeedOutput spd = speedCalc_.update(
       model_, lw, rw, steering.estimatedAngleDeg(), dt);
 
@@ -219,27 +231,83 @@ void VehicleDynamics::step() {
     t.steering.wheelInputPct = manualSteering * 100.0f;
 
     t.nano.rcValid = rcSignal;
+    t.nano.rcValidMask = pkt.rcValidMask;
     t.nano.rcThrottle = rcThrottle;
     t.nano.rcSteering = rcSteering;
-    memcpy((void*)t.nano.rcUs, pkt.rcUs, sizeof(t.nano.rcUs));
+    memcpy((void*)t.nano.rcUs, pkt.rcPulseUs, sizeof(t.nano.rcUs));
+    memcpy((void*)t.nano.rcAgeMs, pkt.rcAgeMs, sizeof(t.nano.rcAgeMs));
+    t.nano.leftPulseCount = pkt.left.pulseCount;
+    t.nano.rightPulseCount = pkt.right.pulseCount;
+    t.nano.leftPeriodUs = pkt.left.periodUs;
+    t.nano.rightPeriodUs = pkt.right.periodUs;
     t.nano.leftFreqHz = lw.freqHz;
     t.nano.rightFreqHz = rw.freqHz;
-    t.nano.leftDir = pkt.leftDir;
-    t.nano.rightDir = pkt.rightDir;
-    t.nano.leftCount = pkt.leftCount;
-    t.nano.rightCount = pkt.rightCount;
-    memcpy((void*)t.nano.adc, pkt.adc, sizeof(t.nano.adc));
-    t.nano.faultFlags = pkt.faultFlags;
-    t.nano.protocolVersion = pkt.version;
-    t.nano.nanoFwMajor = pkt.fwVersion >> 4;
-    t.nano.nanoFwMinor = pkt.fwVersion & 0x0F;
+    t.nano.leftDir = pkt.left.direction;
+    t.nano.rightDir = pkt.right.direction;
+    t.nano.leftWheelFault = pkt.left.fault;
+    t.nano.rightWheelFault = pkt.right.fault;
+    t.nano.leftCount = lw.count;
+    t.nano.rightCount = rw.count;
+    t.nano.motorSenseARaw = pkt.motorSenseARaw;
+    t.nano.motorSenseAFilt = pkt.motorSenseAFilt;
+    t.nano.motorSenseBRaw = pkt.motorSenseBRaw;
+    t.nano.motorSenseBFilt = pkt.motorSenseBFilt;
+    t.nano.batteryRaw = pkt.batteryRaw;
+    t.nano.batteryFilt = pkt.batteryFilt;
+    t.nano.batteryMin = pkt.batteryMin;
+    t.nano.batteryMax = pkt.batteryMax;
+    t.nano.adc[0] = pkt.batteryFilt;
+    t.nano.adc[1] = pkt.motorSenseAFilt;
+    t.nano.adc[2] = pkt.motorSenseBFilt;
+    t.nano.adc[3] = pkt.batteryRaw;
+    t.nano.adc[4] = pkt.motorSenseARaw;
+    t.nano.adc[5] = pkt.motorSenseBRaw;
+    t.nano.outputState = pkt.outputState;
+    t.nano.systemState = pkt.systemState;
+    t.nano.faultBits = pkt.faultFlags;
+    t.nano.protocolVersion = veio::proto::kProtocolVersion;
+
     t.nano.packetsReceived = nano.packetsReceived();
+    t.nano.telemetryReceived = nano.telemetryReceived();
     t.nano.packetsLost = nano.packetsLost();
     t.nano.crcErrors = nano.crcErrors();
+    t.nano.frameErrors = nano.frameErrors();
     t.nano.seqErrors = nano.seqErrors();
+    t.nano.acksReceived = nano.acksReceived();
+    t.nano.faultsReceived = nano.faultsReceived();
     t.nano.lastPacketMs = nano.lastPacketMs();
+    t.nano.lastHeartbeatMs = nano.lastHeartbeatMs();
+    t.nano.timestampUs = nano.lastTimestampUs();
     t.nano.packetRateHz = nano.packetRateHz();
+    t.nano.jitterUs = nano.jitterUs();
     t.nano.online = nanoOnline;
+    t.nano.haveVersion = nano.haveVersion();
+    t.nano.haveDiagnostic = nano.haveDiagnostic();
+
+    if (nano.haveVersion()) {
+      const auto& v = nano.version();
+      t.nano.nanoFwMajor = v.fwMajor;
+      t.nano.nanoFwMinor = v.fwMinor;
+      t.nano.nanoFwPatch = v.fwPatch;
+      t.nano.bootReason = v.bootReason;
+      t.nano.watchdogResets = (v.bootReason == 2) ? 1 : 0;
+    }
+    if (nano.haveDiagnostic()) {
+      const auto& d = nano.diagnostic();
+      t.nano.nanoLoopAvgUs = d.loopTimeAvgUs;
+      t.nano.nanoLoopMaxUs = d.loopTimeMaxUs;
+      t.nano.nanoCpuPct = d.cpuLoadPct;
+      t.nano.nanoSubsystems = d.subsystems;
+      t.nano.nanoSchedulerOverruns = d.schedulerOverruns;
+      t.nano.nanoSamplerOverruns = d.samplerOverruns;
+      t.nano.nanoRxCrcErrors = d.uartCrcErrors;
+      t.nano.nanoFrameErrors = d.uartFrameErrors;
+      t.nano.nanoTxDrops = d.uartTxDrops;
+      t.nano.nanoCommandsReceived = d.commandsReceived;
+      t.nano.nanoRcGlitches = d.rcGlitches;
+      t.nano.nanoFreeRam = d.freeRamBytes;
+    }
+    t.nano.nanoUptimeMs = nano.heartbeat().uptimeMs;
 
     t.system.state = safety.state();
     t.system.controlSource = arbiter.activeSource();

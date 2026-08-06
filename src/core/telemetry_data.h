@@ -62,22 +62,67 @@ struct DriveTelemetry {
 };
 
 struct NanoTelemetry {
+  // RC
   uint16_t rcUs[6] = {1500, 1500, 1500, 1500, 1500, 1500};
+  uint8_t rcValidMask = 0;
+  uint8_t rcAgeMs[6] = {255, 255, 255, 255, 255, 255};
   float rcSteering = 0.0f;  ///< -1..1 mapped
   float rcThrottle = 0.0f;
   bool rcValid = false;
+
+  // Wheels — Nano reports periodUs + freqHzX10; ESP32 derives speed
+  int32_t leftPulseCount = 0, rightPulseCount = 0;
+  uint32_t leftPeriodUs = 0, rightPeriodUs = 0;
   float leftFreqHz = 0.0f, rightFreqHz = 0.0f;
   int8_t leftDir = 0, rightDir = 0;
+  uint8_t leftWheelFault = 0, rightWheelFault = 0;
+  // Convenience aliases used by older UI paths (unsigned pulse counts)
   uint32_t leftCount = 0, rightCount = 0;
-  uint16_t adc[4] = {0, 0, 0, 0};
-  uint16_t faultFlags = 0;
+
+  // Analog (raw ADC counts from Nano)
+  uint16_t motorSenseARaw = 0, motorSenseAFilt = 0;
+  uint16_t motorSenseBRaw = 0, motorSenseBFilt = 0;
+  uint16_t batteryRaw = 0, batteryFilt = 0;
+  uint16_t batteryMin = 0, batteryMax = 0;
+  // Compact adc[] view for the UI: [battFilt, senseAFilt, senseBFilt, battRaw]
+  uint16_t adc[6] = {0, 0, 0, 0, 0, 0};
+
+  uint8_t outputState = 0;
+  uint8_t systemState = 0;
+  uint16_t faultBits = 0;
+
+  // From HEARTBEAT / VERSION / DIAGNOSTIC packets
+  uint32_t nanoUptimeMs = 0;
+  uint8_t watchdogResets = 0;  ///< 1 if last boot was WDT (bootReason==2)
+  uint16_t nanoRxCrcErrors = 0;
+  uint16_t nanoFrameErrors = 0;
+  uint16_t nanoLoopMaxUs = 0;
+  uint16_t nanoLoopAvgUs = 0;
+  uint8_t nanoCpuPct = 0;
+  uint16_t nanoSubsystems = 0;
+  uint16_t nanoSchedulerOverruns = 0;
+  uint16_t nanoSamplerOverruns = 0;
+  uint16_t nanoTxDrops = 0;
+  uint16_t nanoCommandsReceived = 0;
+  uint16_t nanoRcGlitches = 0;
+  uint16_t nanoFreeRam = 0;
+  uint8_t eventCount = 0;  ///< reserved; Nano LOG packet not yet used
   uint8_t protocolVersion = 0;
-  uint8_t nanoFwMajor = 0, nanoFwMinor = 0;
-  uint32_t packetsReceived = 0, packetsLost = 0;
-  uint32_t crcErrors = 0, seqErrors = 0, timeouts = 0;
+  uint8_t nanoFwMajor = 0, nanoFwMinor = 0, nanoFwPatch = 0;
+  uint8_t bootReason = 0;
+
+  // ESP32-side link statistics
+  uint32_t packetsReceived = 0, telemetryReceived = 0, packetsLost = 0;
+  uint32_t crcErrors = 0, frameErrors = 0, seqErrors = 0;
+  uint32_t acksReceived = 0, faultsReceived = 0;
   uint32_t lastPacketMs = 0;
+  uint32_t lastHeartbeatMs = 0;
+  uint32_t timestampUs = 0;
   float packetRateHz = 0.0f;
+  float jitterUs = 0.0f;
   bool online = false;
+  bool haveVersion = false;
+  bool haveDiagnostic = false;
 };
 
 struct PowerTelemetry {

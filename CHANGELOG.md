@@ -3,6 +3,28 @@
 All notable changes to the Dodge Patrol VCM firmware.
 Format: [Keep a Changelog](https://keepachangelog.com), versioning: semver.
 
+## [1.1.1] - 2026-08-06
+
+### Fixed
+- **Verified against public `vcm_extended_io`**: replaced the reconstructed
+  protocol with a **byte-identical** copy of Nano `src/proto/protocol.{h,cpp}`
+  (`veio::proto`). Critical mismatches in the earlier reconstruction:
+  - Sync is `0x55 0xAA` (not AA/55)
+  - Protocol version is **1** (Nano’s `kProtocolVersion`)
+  - CRC covers bytes after the sync preamble only
+  - Telemetry field layout matches Nano (rcAgeMs, 12-byte WheelData with
+    signed pulseCount + freqHzX10 + periodUs, motor/battery ADC pairs)
+  - Commands are `kPktCommand` (0x40) with Nano’s CommandId set; keepalive
+    is `kCmdPing` (Nano answers ACK; no ESP32→Nano heartbeat packet)
+- Diagnostics consume HEARTBEAT / DIAGNOSTIC / VERSION / FAULT packets.
+- `PROTOCOL.md` synced from Nano docs.
+
+## [1.1.0] - 2026-08-06
+
+### Changed
+- First attempt at Nano UART protocol alignment (superseded by 1.1.1 once
+  `vcm_extended_io` became public and could be verified byte-for-byte).
+
 ## [1.0.0] - 2026-08-06
 
 Initial release.
@@ -38,6 +60,7 @@ Initial release.
   manager.
 - Telemetry: canonical shared structure, configurable WS rate,
   pause/resume, 30 s pre-fault event recorder with CSV download.
+
 - OTA: local .bin upload + GitHub Releases check/install with semantic
   version comparison, dual OTA partitions and validation rollback.
 - CI: native unit tests + firmware build on every push; tagged releases
