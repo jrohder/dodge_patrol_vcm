@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 
+#include "config/config_registry.h"
 #include "control/control_arbiter.h"
 #include "core/version.h"
 #include "services/logger.h"
@@ -126,6 +127,7 @@ String VcmWebServer::buildTelemetryJson() {
   sys["str_avg"] = t.system.steerAvgUs;
   sys["str_max"] = t.system.steerMaxUs;
   sys["str_miss"] = t.system.steerMisses;
+  sys["units"] = config.i(UI_UNITS);  // 0=IMPERIAL, 1=METRIC
 
   JsonObject drv = doc["drv"].to<JsonObject>();
   drv["thr"] = serialized(String(t.drive.throttleInput, 2));

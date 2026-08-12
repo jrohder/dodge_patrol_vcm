@@ -24,7 +24,7 @@
   <div class="banner warn hidden" id="banner-commission">NOT COMMISSIONED &mdash; complete calibration before driving</div>
   <div class="banner err hidden" id="banner-fault">FAULT ACTIVE &mdash; see Diagnostics</div>
   <div class="speedo-wrap">
-    <div class="speedo"><span id="d-speed">0.0</span><small>m/s</small></div>
+    <div class="speedo"><span id="d-speed">0.0</span><small data-u="spd">mph</small></div>
     <div class="speedo-side">
       <div class="kv"><label>Control</label><b id="d-src">NONE</b></div>
       <div class="kv"><label>Battery</label><b><span id="d-batt">--</span> V</b></div>
@@ -33,16 +33,16 @@
   </div>
   <div class="grid" id="dash-grid">
     <div class="card"><label>Steering</label><b><span id="d-steer">0.0</span>&deg;</b></div>
-    <div class="card"><label>Left Wheel</label><b><span id="d-lw">0.0</span> m/s</b></div>
-    <div class="card"><label>Right Wheel</label><b><span id="d-rw">0.0</span> m/s</b></div>
+    <div class="card"><label>Left Wheel</label><b><span id="d-lw">0.0</span> <span data-u="spd">mph</span></b></div>
+    <div class="card"><label>Right Wheel</label><b><span id="d-rw">0.0</span> <span data-u="spd">mph</span></b></div>
     <div class="card"><label>Left Motor</label><b><span id="d-li">0.0</span> A</b></div>
     <div class="card"><label>Right Motor</label><b><span id="d-ri">0.0</span> A</b></div>
     <div class="card"><label>Steer Motor</label><b><span id="d-si">0.0</span> A</b></div>
     <div class="card"><label>RC Signal</label><b id="d-rc">--</b></div>
     <div class="card"><label>Nano Link</label><b id="d-nano">--</b></div>
     <div class="card"><label>Diff Bias</label><b id="d-bias">0.00</b></div>
-    <div class="card"><label>Odometer</label><b><span id="d-odo">0</span> m</b></div>
-    <div class="card"><label>Trip</label><b><span id="d-trip">0</span> m</b></div>
+    <div class="card"><label>Odometer</label><b><span id="d-odo">0</span> <span data-u="dist">mi</span></b></div>
+    <div class="card"><label>Trip</label><b><span id="d-trip">0</span> <span data-u="dist">mi</span></b></div>
     <div class="card"><label>Uptime</label><b id="d-up">0s</b></div>
   </div>
   <button class="btn danger block" id="btn-estop">EMERGENCY STOP</button>
@@ -67,7 +67,7 @@
         <button class="btn toggle" id="btn-lights">Lights</button>
         <button class="btn toggle" id="btn-siren">Siren</button>
       </div>
-      <div class="kv"><label>Actual speed</label><b><span id="r-spd">0.0</span> m/s</b></div>
+      <div class="kv"><label>Actual speed</label><b><span id="r-spd">0.0</span> <span data-u="spd">mph</span></b></div>
       <div class="kv"><label>Steering</label><b><span id="r-act">0</span>&deg;</b></div>
     </div>
   </div>
@@ -164,8 +164,8 @@
       <div class="card"><label>R count</label><b id="c-rc">0</b></div>
       <div class="card"><label>L RPM</label><b id="c-lrpm">0</b></div>
       <div class="card"><label>R RPM</label><b id="c-rrpm">0</b></div>
-      <div class="card"><label>L speed</label><b><span id="c-ls">0</span> m/s</b></div>
-      <div class="card"><label>R speed</label><b><span id="c-rs">0</span> m/s</b></div>
+      <div class="card"><label>L speed</label><b><span id="c-ls">0</span> <span data-u="spd">mph</span></b></div>
+      <div class="card"><label>R speed</label><b><span id="c-rs">0</span> <span data-u="spd">mph</span></b></div>
     </div>
     <p class="hint">Lift the rear wheels. Run a motor test and fine-tune counts/rev and per-wheel calibration factors in Configuration &rarr; drive.</p>
     <div class="row wrap">
@@ -220,8 +220,8 @@
   <h3>Drive</h3>
   <div class="grid small">
     <div class="card"><label>Throttle</label><b id="g-thr">--</b></div>
-    <div class="card"><label>Requested</label><b><span id="g-req">--</span> m/s</b></div>
-    <div class="card"><label>Limited</label><b><span id="g-lim">--</span> m/s</b></div>
+    <div class="card"><label>Requested</label><b><span id="g-req">--</span> <span data-u="spd">mph</span></b></div>
+    <div class="card"><label>Limited</label><b><span id="g-lim">--</span> <span data-u="spd">mph</span></b></div>
     <div class="card"><label>L tgt / act</label><b id="g-l">--</b></div>
     <div class="card"><label>R tgt / act</label><b id="g-r">--</b></div>
     <div class="card"><label>L/R PWM</label><b id="g-pwm">--</b></div>

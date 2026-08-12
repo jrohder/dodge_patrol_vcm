@@ -3,6 +3,21 @@
 All notable changes to the Dodge Patrol VCM firmware.
 Format: [Keep a Changelog](https://keepachangelog.com), versioning: semver.
 
+## [1.2.0] - 2026-08-12
+
+### Added
+- **`ui.units`** configuration (IMPERIAL | METRIC). Factory default is
+  **IMPERIAL** (US customary): dashboards and the config editor show mph,
+  inches, miles, pounds, and ft/s². Control math remains SI internally;
+  the UI converts on display and on APPLY/SAVE.
+- Telemetry `sys.units` and `/api/system` expose the active preference.
+
+### Changed
+- Factory vehicle/drive defaults rounded to US values: 10 in wheels,
+  24 in wheelbase, 20 in track, 66 lb mass, 5 mph max, 3 mph reverse,
+  2.5 / 5.0 ft/s² accel/decel.
+- Configuration schema version bumped to 2.
+
 ## [1.1.1] - 2026-08-06
 
 ### Fixed
