@@ -48,6 +48,7 @@ function setConn(up) {
 }
 function wsSend(obj) { if (wsUp && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 wsConnect();
+Units.refreshLabels();
 setInterval(() => { if (wsUp && Date.now() - lastTelemetry > 4000) setConn(false); }, 2000);
 
 /* ---------------------------------------------------------- telemetry */
@@ -59,6 +60,11 @@ function fmtUptime(s) {
 function onTelemetry(m) {
   const { sys, drv, str, nano, pwr, imu } = m;
 
+  if (sys.units !== undefined) {
+    Units.setMode(sys.units);
+    Units.refreshLabels();
+  }
+
   // header
   const st = $("sys-state");
   st.textContent = sys.state;
@@ -69,22 +75,22 @@ function onTelemetry(m) {
   $("banner-fault").classList.toggle("hidden", !["FAULT", "ESTOP"].includes(sys.state));
   $("btn-estop-clear").classList.toggle("hidden", sys.state !== "ESTOP");
 
-  // dashboard
-  T("d-speed", Math.abs(drv.spd).toFixed(1));
+  // dashboard (speeds/distances converted for display units)
+  T("d-speed", Units.fmtSpd(Math.abs(drv.spd)));
   T("d-src", sys.src);
   T("d-batt", pwr.v);
   T("d-thr", Math.round(drv.thr * 100));
   T("d-steer", str.acta);
-  T("d-lw", drv.la); T("d-rw", drv.ra);
+  T("d-lw", Units.fmtSpd(drv.la)); T("d-rw", Units.fmtSpd(drv.ra));
   T("d-li", pwr.li); T("d-ri", pwr.ri); T("d-si", pwr.si);
   T("d-rc", nano.rcv ? "OK" : "LOST");
   T("d-nano", nano.online ? "ONLINE" : "OFFLINE");
   T("d-bias", drv.bias);
-  T("d-odo", drv.odo); T("d-trip", drv.trip);
+  T("d-odo", Units.fmtDist(drv.odo)); T("d-trip", Units.fmtDist(drv.trip));
   T("d-up", fmtUptime(sys.up));
 
   // remote
-  T("r-spd", drv.spd); T("r-act", str.acta);
+  T("r-spd", Units.fmtSpd(drv.spd)); T("r-act", str.acta);
 
   // calibration live values
   T("c-raw", str.raw); T("c-filt", str.filt);
@@ -94,7 +100,7 @@ function onTelemetry(m) {
   T("c-lp", nano.lp); T("c-rp", nano.rp);
   T("c-lc", nano.lc); T("c-rc", nano.rc2);
   T("c-lrpm", drv.lrpm); T("c-rrpm", drv.rrpm);
-  T("c-ls", drv.la); T("c-rs", drv.ra);
+  T("c-ls", Units.fmtSpd(drv.la)); T("c-rs", Units.fmtSpd(drv.ra));
   T("c-iraw", imu.raw_a.map((v) => v.toFixed(2)).join(" / "));
   T("c-icor", imu.a.map((v) => v.toFixed(2)).join(" / "));
   T("c-pitch", imu.pitch); T("c-roll", imu.roll); T("c-yaw", imu.yaw);
@@ -104,8 +110,10 @@ function onTelemetry(m) {
   T("g-sreq", str.req); T("g-sact", str.act); T("g-serr", str.err);
   T("g-spid", `${str.p} / ${str.i} / ${str.d}`);
   T("g-sout", str.out); T("g-spwm", str.pwm);
-  T("g-thr", drv.thr); T("g-req", drv.req); T("g-lim", drv.lim);
-  T("g-l", `${drv.lt} / ${drv.la}`); T("g-r", `${drv.rt} / ${drv.ra}`);
+  T("g-thr", drv.thr);
+  T("g-req", Units.fmtSpd(drv.req)); T("g-lim", Units.fmtSpd(drv.lim));
+  T("g-l", `${Units.fmtSpd(drv.lt)} / ${Units.fmtSpd(drv.la)}`);
+  T("g-r", `${Units.fmtSpd(drv.rt)} / ${Units.fmtSpd(drv.ra)}`);
   T("g-pwm", `${drv.lpwm} / ${drv.rpwm}`);
   T("g-slip", drv.slip ? "DETECTED" : "no");
   T("g-bias", drv.bias);
@@ -188,6 +196,11 @@ let cfgLoaded = false, schema = null, dirtyKeys = {};
 async function loadConfig() {
   schema = await api("/api/config/schema");
   cfgLoaded = true;
+  const unitsParam = schema.params.find((p) => p.key === "ui.units");
+  if (unitsParam) {
+    Units.setMode(Math.round(unitsParam.value));
+    Units.refreshLabels();
+  }
   const cats = [...new Set(schema.params.map((p) => p.key.split(".")[0])
     .concat(schema.strings.map((p) => p.key.split(".")[0])))].sort();
   $("cfg-cat").innerHTML = cats.map((c) => `<option>${c}</option>`).join("");
@@ -217,6 +230,13 @@ function renderConfig() {
 function cfgItem(p, isString) {
   const div = document.createElement("div");
   div.className = "cfg-item" + (p.danger ? " danger" : "");
+  const dispUnit = Units.displayUnit(p.units);
+  const dispVal = isString ? p.value
+    : (p.type === "bool" || p.type === "enum") ? p.value
+    : Units.roundDisp(Units.fromSi(p.value, p.units), p.units);
+  const dispMin = Units.roundDisp(Units.fromSi(p.min, p.units), p.units);
+  const dispMax = Units.roundDisp(Units.fromSi(p.max, p.units), p.units);
+  const dispDef = Units.roundDisp(Units.fromSi(p.def, p.units), p.units);
   let ctrl;
   if (isString) {
     ctrl = `<input type="${p.key.includes("password") ? "password" : "text"}" value="${String(p.value).replace(/"/g, "&quot;")}" data-key="${p.key}" data-str="1" style="max-width:220px">`;
@@ -228,23 +248,31 @@ function cfgItem(p, isString) {
     ctrl = `<select data-key="${p.key}">${opts}</select>`;
   } else {
     const step = p.type === "int" ? 1 : "any";
-    ctrl = `<input type="number" value="${p.value}" min="${p.min}" max="${p.max}" step="${step}" data-key="${p.key}">`;
+    ctrl = `<input type="number" value="${dispVal}" min="${dispMin}" max="${dispMax}" step="${step}" data-key="${p.key}" data-si-unit="${p.units || ""}">`;
   }
   div.innerHTML = `<div class="head"><span class="name">${p.name}
-      ${p.units ? `<span class="units">(${p.units})</span>` : ""}
+      ${dispUnit ? `<span class="units">(${dispUnit})</span>` : ""}
       ${p.danger ? '<span class="dtag">&#9888; CAUTION</span>' : ""}
       ${p.restart ? '<span class="units">[restart]</span>' : ""}</span>${ctrl}</div>
     <div class="desc">${p.desc || ""}</div>
     ${!isString && p.type !== "bool" && p.type !== "enum"
-      ? `<div class="range">min ${p.min} &middot; default ${p.def} &middot; max ${p.max}</div>` : ""}`;
+      ? `<div class="range">min ${dispMin} &middot; default ${dispDef} &middot; max ${dispMax}</div>` : ""}`;
   div.querySelector("[data-key]").addEventListener("change", (e) => {
     const el = e.target;
     if (p.danger && !confirm(`"${p.name}" is a safety-critical setting.\n\nApply this change deliberately?`)) {
       renderConfig(); return;
     }
-    dirtyKeys[p.key] = el.dataset.str ? el.value
-      : el.type === "checkbox" ? (el.checked ? 1 : 0) : +el.value;
+    let v;
+    if (el.dataset.str) v = el.value;
+    else if (el.type === "checkbox") v = el.checked ? 1 : 0;
+    else if (p.type === "enum") v = +el.value;
+    else v = Units.toSi(+el.value, p.units);
+    dirtyKeys[p.key] = v;
     div.classList.add("dirty");
+    if (p.key === "ui.units") {
+      Units.setMode(+el.value);
+      Units.refreshLabels();
+    }
   });
   return div;
 }
@@ -451,6 +479,7 @@ async function loadSystem() {
   const rows = {
     "Firmware": s.fw_version, "Commit": s.git_commit, "Built": s.build_date,
     "Nano protocol": "v" + s.protocol_version, "Chip": s.chip,
+    "Display units": s.units || Units.name(),
     "Flash": (s.flash_kb / 1024).toFixed(0) + " MB",
     "Sketch": s.sketch_kb + " kB", "Boot partition": s.partition,
     "Uptime": fmtUptime(s.uptime_s), "Free heap": (s.heap / 1024).toFixed(0) + " kB",

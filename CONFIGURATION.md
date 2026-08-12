@@ -37,6 +37,7 @@ schema is migrated where compatible.
 
 | Category | Contents |
 | --- | --- |
+| `ui` | **Display units** (`ui.units`: IMPERIAL default, or METRIC) |
 | `vehicle` | wheel diameter, wheelbase, track width, mass, CoG height, name |
 | `drive` | counts/rev, gear ratio, per-wheel cal factors, speed/accel/decel limits, brake mode, throttle deadband/expo, PWM limits, slip threshold |
 | `steering` | max angle, rate limit, PID gains, deadband, soft-limit margin, center trim, feedback filter/validity, wheel-input (P3022) endpoints |
@@ -50,6 +51,18 @@ schema is migrated where compatible.
 | `ota` | auto-check, pre-releases, GitHub repository |
 | `log` | runtime log level |
 | `wifi` | mode (AP/STA/AP_STA), SSIDs, passwords, hostname |
+
+## Display units
+
+Factory default is **IMPERIAL** (US customary): mph, inches, miles, pounds,
+ft/s². Switch to METRIC from Configuration → `ui` → Display Units.
+
+- Stored NVS values remain SI (`m`, `m/s`, `kg`, `m/s²`) so physics and
+  JSON import/export stay unambiguous.
+- The web UI converts for display and converts back on APPLY/SAVE.
+- Vehicle defaults are round US values (10 in wheels, 24 in wheelbase,
+  5 mph max, etc.).
+- Control loops always compute in SI regardless of the display setting.
 
 ## REST API
 

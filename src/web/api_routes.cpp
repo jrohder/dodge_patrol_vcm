@@ -60,6 +60,8 @@ void VcmWebServer::setupApi() {
     doc["git_commit"] = VCM_GIT_COMMIT;
     doc["build_date"] = VCM_BUILD_DATE;
     doc["protocol_version"] = veio::proto::kProtocolVersion;
+    doc["units"] = config.i(UI_UNITS) == 0 ? "IMPERIAL" : "METRIC";
+    doc["units_id"] = config.i(UI_UNITS);
     doc["chip"] = ESP.getChipModel();
     doc["flash_kb"] = ESP.getFlashChipSize() / 1024;
     doc["sketch_kb"] = ESP.getSketchSize() / 1024;
