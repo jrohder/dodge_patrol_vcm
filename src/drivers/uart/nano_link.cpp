@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "core/pins.h"
+#include "driver/gpio.h"
 #include "services/logger.h"
 
 namespace vcm {
@@ -15,8 +16,14 @@ static HardwareSerial& kUart = Serial1;
 
 void NanoLink::begin(uint32_t baud) {
   baud_ = baud;
-  kUart.begin(baud_, SERIAL_8N1, pins::NANO_RX, pins::NANO_TX);
+  // Buffer sizes must be set before begin(); calling setRxBufferSize()
+  // afterwards is a no-op and logs "RX Buffer can't be resized when Serial
+  // is already running" — the default 256-byte RX ring then overruns at
+  // 100 Hz / 460800.
   kUart.setRxBufferSize(1024);
+  kUart.setTxBufferSize(512);
+  kUart.begin(baud_, SERIAL_8N1, pins::NANO_RX, pins::NANO_TX);
+  kUart.setTimeout(0);
   LOGI("NANO", "UART link @ %lu baud, protocol v%u (RX=%d TX=%d)",
        (unsigned long)baud_, kProtocolVersion, pins::NANO_RX, pins::NANO_TX);
   // Ask the Nano to identify itself once the link is up.
@@ -24,7 +31,9 @@ void NanoLink::begin(uint32_t baud) {
 }
 
 void NanoLink::poll() {
+  rxPinLevel_ = gpio_get_level((gpio_num_t)pins::NANO_RX);
   while (kUart.available() > 0) {
+    bytesReceived_++;
     if (parser_.feed((uint8_t)kUart.read())) {
       handleFrame(parser_.frame());
     }

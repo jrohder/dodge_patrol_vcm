@@ -54,6 +54,8 @@ class NanoLink {
   uint32_t packetsLost() const { return packetsLost_; }
   uint32_t acksReceived() const { return acksReceived_; }
   uint32_t faultsReceived() const { return faultsReceived_; }
+  uint32_t bytesReceived() const { return bytesReceived_; }
+  int rxPinLevel() const { return rxPinLevel_; }
   float packetRateHz() const { return packetRateHz_; }
   float jitterUs() const { return jitterUs_; }
   bool protocolMismatch() const { return protocolMismatch_; }
@@ -82,6 +84,8 @@ class NanoLink {
   uint32_t packetsReceived_ = 0, telemetryReceived_ = 0;
   uint32_t seqErrors_ = 0, packetsLost_ = 0;
   uint32_t acksReceived_ = 0, faultsReceived_ = 0;
+  uint32_t bytesReceived_ = 0;
+  int rxPinLevel_ = -1;
   float packetRateHz_ = 0.0f, jitterUs_ = 0.0f;
   uint32_t rateWindowStart_ = 0, rateWindowCount_ = 0;
   uint16_t txSeq_ = 0;
