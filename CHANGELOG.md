@@ -3,6 +3,18 @@
 All notable changes to the Dodge Patrol VCM firmware.
 Format: [Keep a Changelog](https://keepachangelog.com), versioning: semver.
 
+## [Unreleased]
+
+### Fixed
+- Nano UART on ESP32-S3-DevKitC-1 moved from GPIO 43/44 (silkscreen TX/RX,
+  hard-wired to the onboard CP2102) to **GPIO 1 (TX) / GPIO 2 (RX)** so
+  telemetry can actually reach the VCM.
+- `Serial1.setRxBufferSize(1024)` is now called *before* `begin()`; the
+  previous order left the 256-byte default RX ring in place.
+- USB console routed through USB-Serial-JTAG (`ARDUINO_USB_MODE=0`,
+  `ARDUINO_USB_CDC_ON_BOOT=1`) so boot/NANO logs appear on the native USB
+  port instead of UART0.
+
 ## [1.2.0] - 2026-08-12
 
 ### Added

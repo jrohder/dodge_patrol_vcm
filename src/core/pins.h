@@ -12,9 +12,13 @@
 
 namespace pins {
 
-// UART link to Arduino Nano R4 (extended IO processor)
-constexpr int NANO_TX = 43;  ///< ESP32 TX -> Nano RX
-constexpr int NANO_RX = 44;  ///< ESP32 RX <- Nano TX
+// UART link to Arduino Nano R4 (extended IO processor).
+// Do NOT use GPIO 43/44 on the ESP32-S3-DevKitC-1: those pads are the
+// silkscreen TX/RX labels, but they are hard-wired to the onboard CP2102
+// USB-UART bridge (and UART0). That fights the Nano's 5 V→3.3 V divider
+// on RX and silently drops telemetry. GPIO 1/2 are the next header pins.
+constexpr int NANO_TX = 1;  ///< ESP32 TX -> Nano D0 (RX1)
+constexpr int NANO_RX = 2;  ///< ESP32 RX <- Nano D1 (TX1) via divider
 
 // I2C sensor bus (INA3221 current monitor, MPU6050 IMU) @ 400 kHz
 constexpr int I2C_SDA = 9;

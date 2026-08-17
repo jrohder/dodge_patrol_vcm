@@ -9,7 +9,7 @@ safe) until the condition clears; **WARNING** faults are logged and shown.
 
 | Code | Severity | Meaning | Recovery |
 | --- | --- | --- | --- |
-| COM-001 | TRIP | Nano communication timeout | Check UART wiring (GPIO43/44), Nano power, baud (460800). Clears automatically when packets resume. |
+| COM-001 | TRIP | Nano communication timeout | Check UART wiring (**GPIO1 TX / GPIO2 RX**, not silkscreen TX/RX), Nano power, baud (460800), 5 V→3.3 V divider on Nano TX. Clears automatically when packets resume. |
 | COM-002 | WARNING | Excessive Nano CRC errors | Check wiring/shielding and shared ground. |
 | COM-003 | TRIP | Nano protocol version mismatch | Flash matching Nano firmware (see PROTOCOL.md). |
 | RC-001 | TRIP | RC signal lost while RC had control | Restore transmitter; clears on signal return. |

@@ -194,6 +194,15 @@ static void systemTask(void*) {
     wifiManager.tick();
     webServer.tick();
 
+    LOGI("NANO",
+         "online=%d pkts=%lu telem=%lu crc=%lu frm=%lu bytes=%lu acks=%lu rx=%d",
+         nano.online((uint32_t)config.i(SAF_NANO_TIMEOUT)) ? 1 : 0,
+         (unsigned long)nano.packetsReceived(),
+         (unsigned long)nano.telemetryReceived(),
+         (unsigned long)nano.crcErrors(), (unsigned long)nano.frameErrors(),
+         (unsigned long)nano.bytesReceived(),
+         (unsigned long)nano.acksReceived(), nano.rxPinLevel());
+
     // Boot button held 10 s at runtime = factory reset
     if (digitalRead(pins::BOOT_BUTTON) == LOW) {
       if (buttonHeldSince == 0) buttonHeldSince = millis();
@@ -244,6 +253,9 @@ static void bootSelfTest() {
 
 static void bootstrap() {
   Serial.begin(115200);
+#if ARDUINO_USB_CDC_ON_BOOT
+  Serial.setTxTimeoutMs(0);  // never stall tasks if the USB host isn't reading
+#endif
   logger.begin();
   statusLed.begin();  // blue = booting
   LOGI("BOOT", "Dodge Patrol VCM %s (%s, built %s)", VCM_FW_VERSION,

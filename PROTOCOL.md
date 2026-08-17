@@ -21,8 +21,9 @@ compile-time size checks.
 |------------|--------------------------------------------------------------|
 | Transport  | UART, 8N1                                                    |
 | Nano pins  | D1 = TX1 (Nano → ESP32), D0 = RX1 (ESP32 → Nano)             |
+| ESP32 pins | GPIO 1 = TX → Nano D0, GPIO 2 = RX ← Nano D1. **Not** DevKit silkscreen TX/RX (GPIO 43/44). |
 | Baud       | 460800 default (`nano_r4` build), 921600 optional (`nano_r4_921600` build) |
-| Logic level| 5 V on the Nano side — **use a level shifter or divider toward the 3.3 V ESP32 RX** |
+| Logic level| 5 V on the Nano side — **use a 1 kΩ / 2 kΩ divider (or a level shifter) toward the 3.3 V ESP32 RX** |
 
 ## Frame format
 

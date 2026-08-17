@@ -7,8 +7,8 @@ firmware (`src/core/pins.h`); everything behavioral is configuration.
 
 | GPIO | Function | Notes |
 | --- | --- | --- |
-| 43 | UART TX → Nano | commands/heartbeat, 460800 baud |
-| 44 | UART RX ← Nano | telemetry packets ~100 Hz (primary sensor input) |
+| 1 | UART TX → Nano D0 | commands/ping, 460800 baud. **Not** the silkscreen TX pin. |
+| 2 | UART RX ← Nano D1 | telemetry ~100 Hz, via 5 V→3.3 V divider. **Not** the silkscreen RX pin. |
 | 9 | I2C SDA | 400 kHz sensor bus |
 | 10 | I2C SCL | |
 | 11 | SPI CS — P3022 | steering **wheel** angle encoder, 4096 counts |
@@ -26,6 +26,31 @@ firmware (`src/core/pins.h`); everything behavioral is configuration.
 | 0 | Boot button | bootloader; held 10 s at runtime = factory reset |
 
 All motor PWM runs at 20 kHz / 10-bit via LEDC channels 0–5.
+
+## Nano UART wiring (ESP32-S3-DevKitC-1)
+
+Do **not** use the header pins labelled TX / RX (GPIO 43 / 44). On this
+DevKit those pads are hard-wired to the onboard CP2102 USB-UART bridge.
+The CP2102 fights the Nano's TX divider on GPIO 44, so the ESP32 can
+*send* pings (Nano USB log shows `ev=3 param=7` at 10 Hz) while never
+*receiving* telemetry (COM-001). GPIO 1 and 2 are the next two pins on
+the same header.
+
+```
+ESP32 GPIO1 (TX, 3.3 V)  ----------------->  Nano D0 (RX1)     no divider
+Nano   D1   (TX, 5 V)    -- 1 kΩ --+----->  ESP32 GPIO2 (RX)
+                                   |
+                                 2 kΩ
+                                   |
+                                  GND  <-->  Nano GND   (explicit; don't rely on USB)
+```
+
+The divider ratio is 2/3, so 5 V becomes ~3.3 V. Keep the resistors in
+the 1–3.3 kΩ range; 10 kΩ+ parts are too slow at 460800 baud. ESP32 GPIO
+is **not** 5 V tolerant — never tie Nano TX straight to GPIO 2.
+
+Flash from the **native USB** port (enumerates as Espressif
+`USB JTAG/serial debug unit`), not the UART USB port.
 
 ## The two steering measurements (do not confuse!)
 
@@ -80,6 +105,7 @@ during OTA, FAULT, ESTOP and while not commissioned.
 
 Remaining ESP32-S3 GPIOs are intentionally unused and documented here for
 future modules (GPS, CAN transceiver, display, temperature sensing,
-additional lights/actuators): 1, 2, 5, 6, 7, 21, 35–42, 45, 46, 48. The
-modular driver/controller architecture allows adding these without
-architectural rewrites.
+additional lights/actuators): 5, 6, 7, 21, 35–42, 45, 46, 48. GPIO 43/44
+are the DevKit silkscreen TX/RX pads and stay reserved for the onboard
+USB-UART bridge. The modular driver/controller architecture allows adding
+these without architectural rewrites.
