@@ -140,9 +140,27 @@ summary { font-weight: 700; cursor: pointer; min-height: 32px; display: flex;
 .notes { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 10px; font-size: 12px; white-space: pre-wrap; }
 
+.chk { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 14px; color: var(--text); }
+.chk input { width: 22px; height: 22px; }
+.trace-toggles { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 8px 0; }
+.trace-toggles label { display: flex; align-items: center; gap: 5px; font-size: 12px;
+  color: var(--text); min-height: 32px; }
+.trace-toggles input { width: 18px; height: 18px; }
+.trace-toggles .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.sdiag-canvas-wrap { position: relative; height: 280px; touch-action: none;
+  background: #07090e; border: 1px solid var(--line); border-radius: var(--radius);
+  margin: 8px 0; overflow: hidden; }
+.sdiag-canvas-wrap.short { height: 180px; }
+.sdiag-canvas-wrap canvas { width: 100%; height: 100%; display: block; }
+.sdiag-cursor { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 8px 10px; white-space: pre-wrap; min-height: 3em; }
+#sdiag-hunt.banner { margin-top: 8px; }
+
 #tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: flex;
   background: rgba(15,19,28,.96); backdrop-filter: blur(8px);
   border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 #tabbar button { flex: 1; min-height: 54px; background: none; border: none;
-  color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+  color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer;
+  padding: 0 2px; }
 #tabbar button.active { color: var(--accent); }

@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com), versioning: semver.
 
 ## [Unreleased]
 
+### Added
+- **Steering Diagnostics**: 200 Hz / 60 s rolling recorder, live canvas
+  graph (Steer page), trace presets, pause/live/cursor, hunting indicator,
+  CSV/JSON/PNG/ZIP export. Independent of the 30 s pre-fault event recorder.
+- **Smart Characterization**: position-based PWM sweep (no INA3221 required)
+  for left/right start/hold PWM (hold is measured by walking PWM down after
+  start is proven), velocity, backlash and settling; graphs; conservative
+  recommended settings (Apply vs Keep); baseline + history +
+  performance-deviation comparison. E-stop / OTA / output-disable aborts
+  the wizard and zeros the actuator.
+- Steering control extensions on the existing 200 Hz PID: start/hold PWM
+  hysteresis, gain scheduling (0 = inherit `pid_kp`), filtered-velocity D
+  term, stronger anti-windup, optional feed-forward (**off by default**).
+- Configuration schema **v3** with the new `steering.*` diagnostic and
+  characterization parameters.
+
 ### Fixed
 - Nano UART on ESP32-S3-DevKitC-1 moved from GPIO 43/44 (silkscreen TX/RX,
   hard-wired to the onboard CP2102) to **GPIO 1 (TX) / GPIO 2 (RX)** so

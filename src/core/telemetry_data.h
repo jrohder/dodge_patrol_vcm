@@ -41,7 +41,12 @@ struct SteeringTelemetry {
   uint16_t wheelInputRaw = 0;  ///< P3022 steering wheel encoder counts
   float wheelInputPct = 0.0f;  ///< -100..100 normalized wheel input
   float currentA = 0.0f;
+  bool currentValid = false;  ///< false when INA3221 is absent/faulted
   bool calibrated = false;
+  float velocityPctS = 0.0f;
+  float feedforward = 0.0f;
+  uint8_t controlState = 0;  ///< SteerControlState
+  bool outputEnabled = false;
 };
 
 struct DriveTelemetry {

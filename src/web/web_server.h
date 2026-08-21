@@ -20,21 +20,32 @@ class VcmWebServer {
   /// Broadcast one telemetry frame to all WebSocket clients (20 Hz task).
   void broadcastTelemetry();
 
+  /// Send a batch of packed 200 Hz steering samples to subscribed clients.
+  /// Must NOT run inside the steering control task.
+  void broadcastSteerDiag();
+
   /// Periodic WS housekeeping (client cleanup). Call at ~1 Hz.
   void tick();
 
  private:
   void setupStatic();
-  void setupApi();      // api_routes.cpp
-  void setupOtaApi();   // api_ota.cpp
+  void setupApi();          // api_routes.cpp
+  void setupOtaApi();       // api_ota.cpp
+  void setupSteeringApi();  // api_steering.cpp
   void setupWebSocket();
   void handleWsMessage(AsyncWebSocketClient* client, const char* data,
                        size_t len);
+  void sdiagSubscribe(uint32_t clientId, bool on);
   String buildTelemetryJson();
 
   AsyncWebServer server_{80};
   AsyncWebSocket ws_{"/ws"};
   bool telemetryPaused_ = false;
+
+  static constexpr int kMaxSdiagClients = 4;
+  uint32_t sdiagIds_[kMaxSdiagClients] = {};
+  uint32_t sdiagSeq_[kMaxSdiagClients] = {};
+  uint8_t sdiagCount_ = 0;
 };
 
 extern VcmWebServer webServer;

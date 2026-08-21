@@ -26,8 +26,12 @@ are all done from a phone.
   with configurable threshold and hold time.
 - **Closed-loop steering** — Firgelli actuator feedback potentiometer + PID
   at 200 Hz with soft limits, rate limiting, deadband, overcurrent trip and
-  feedback-loss detection. The P3022 SPI encoder reads the *steering wheel*
-  (driver input), not the actuator.
+  feedback-loss detection. Optional start/hold PWM hysteresis, gain
+  scheduling and feed-forward (off until enabled). The P3022 SPI encoder
+  reads the *steering wheel* (driver input), not the actuator.
+- **Steering diagnostics** — 200 Hz 60-second rolling recorder, live graph
+  on iPhone, CSV/JSON/PNG export, smart actuator characterization and
+  baseline comparison. Independent of the 30-second pre-fault event recorder.
 - **Differential steering** — pluggable module with SIMPLE (percentage) and
   GEOMETRY (Ackermann) strategies, aggressive turn assist, inside-wheel
   braking, all configurable.
@@ -93,7 +97,7 @@ src/
   drivers/    BTS7960, P3022, Firgelli ADC, MPU6050, INA3221, Nano UART
               link, status LED, WiFi
   services/   logger, telemetry hub, safety state machine, diagnostics,
-              event recorder, calibration, OTA
+              event recorder, steering recorder, characterization, calibration, OTA
   web/        async web server, REST API, WebSocket
 web/          dashboard sources (html/css/js), gzipped into flash at build
 config/       defaults.json (factory defaults reference)
@@ -110,6 +114,7 @@ tools/        build scripts (version stamping, web asset embedding)
 | [CALIBRATION.md](CALIBRATION.md) | Commissioning + calibration wizards |
 | [CONFIGURATION.md](CONFIGURATION.md) | Configuration system and parameters |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Fault codes and recovery |
+| [STEERING_DIAGNOSTICS.md](STEERING_DIAGNOSTICS.md) | 60 s steering graph, characterization, baseline |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ## Releases and OTA
