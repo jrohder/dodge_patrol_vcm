@@ -23,8 +23,10 @@ Adding a parameter is one line in `params.def`.
 | **REVERT** | Reload the last saved values. |
 | **Factory reset** | Restore defaults (double confirmation; calibration data is kept separately). Also: hold the boot button 10 s. |
 
-Configuration is versioned (`schema_version`); on boot an older stored
-schema is migrated where compatible.
+Configuration is versioned (`schema_version`, currently **3**); on boot an older stored
+schema is migrated where compatible. New steering diagnostic parameters keep
+factory defaults until APPLY/SAVE (feed-forward stays off; scheduled P gains
+of 0 inherit `steering.pid_kp`).
 
 ## Backup / restore
 
@@ -40,7 +42,7 @@ schema is migrated where compatible.
 | `ui` | **Display units** (`ui.units`: IMPERIAL default, or METRIC) |
 | `vehicle` | wheel diameter, wheelbase, track width, mass, CoG height, name |
 | `drive` | counts/rev, gear ratio, per-wheel cal factors, speed/accel/decel limits, brake mode, throttle deadband/expo, PWM limits, slip threshold |
-| `steering` | max angle, rate limit, PID gains, deadband, soft-limit margin, center trim, feedback filter/validity, wheel-input (P3022) endpoints |
+| `steering` | max angle, rate limit, PID gains, deadband, soft-limit margin, center trim, feedback filter/validity, start/hold PWM, hysteresis, gain scheduling, derivative filter, PWM slew, feed-forward (default OFF), smart-characterization sweep, wheel-input (P3022) endpoints |
 | `diff` | enable, algorithm (OFF/SIMPLE/GEOMETRY), activation/full-effect angles, reduction/boost, inside-wheel brake, speed window, ramp, aggressive assist |
 | `safety` | RC/Nano/web timeouts, battery cutoff/warning, heap floor |
 | `current` | shunt value, channel role mapping, offset/scale, warning/limit/trip levels |

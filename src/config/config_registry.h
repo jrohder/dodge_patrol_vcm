@@ -23,7 +23,7 @@ namespace vcm {
 
 class ConfigRegistry {
  public:
-  static constexpr uint16_t SCHEMA_VERSION = 2;
+  static constexpr uint16_t SCHEMA_VERSION = 3;
 
   /// Load saved values from NVS (missing keys keep defaults) and migrate
   /// older schema versions if needed. Call once at boot before tasks start.

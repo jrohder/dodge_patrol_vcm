@@ -14,6 +14,8 @@ document.querySelectorAll("#tabbar button").forEach((btn) => {
     if (btn.dataset.page === "config" && !cfgLoaded) loadConfig();
     if (btn.dataset.page === "fw") refreshOta();
     if (btn.dataset.page === "sys") loadSystem();
+    if (typeof SDiag !== "undefined") SDiag.onPage(btn.dataset.page === "steer");
+    if (btn.dataset.page === "cal" && typeof SChar !== "undefined") SChar.loadHistory();
   });
 });
 
@@ -31,10 +33,19 @@ let ws = null, wsUp = false, lastTelemetry = 0;
 
 function wsConnect() {
   ws = new WebSocket(`ws://${location.host}/ws`);
-  ws.onopen = () => { setConn(true); };
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => {
+    setConn(true);
+    if ($("page-steer") && $("page-steer").classList.contains("active") && typeof SDiag !== "undefined")
+      SDiag.onPage(true);
+  };
   ws.onclose = () => { setConn(false); setTimeout(wsConnect, 1500); };
   ws.onerror = () => ws.close();
   ws.onmessage = (ev) => {
+    if (typeof ev.data !== "string") {
+      if (typeof SDiag !== "undefined") SDiag.onWsBinary(ev);
+      return;
+    }
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (m.type === "telemetry") { lastTelemetry = Date.now(); onTelemetry(m); }
   };
@@ -143,6 +154,21 @@ function onTelemetry(m) {
   T("g-dyn", `${sys.dyn_avg}us avg, ${sys.dyn_max}us max, ${sys.dyn_miss} miss`);
   T("g-str", `${sys.str_avg}us avg, ${sys.str_max}us max, ${sys.str_miss} miss`);
   T("g-rssi", sys.rssi + " dBm");
+
+  // steering diagnostics live panel (10–20 Hz via existing telemetry)
+  T("sd-sp", str.req); T("sd-act", str.act); T("sd-err", str.err);
+  T("sd-raw", str.raw); T("sd-filt", str.filt); T("sd-pwm", str.pwm);
+  T("sd-vel", str.vel != null ? str.vel : "--");
+  T("sd-p", str.p); T("sd-i", str.i); T("sd-d", str.d);
+  T("sd-ff", str.ff != null ? str.ff : "--");
+  T("sd-st", str.st || "--");
+  const hunt = $("sdiag-hunt");
+  if (hunt) {
+    hunt.classList.toggle("hidden", !str.hunt);
+    hunt.textContent = str.hunt
+      ? (`Hunting Detected` + (str.hunt_sev ? ` (severity ${str.hunt_sev})` : ""))
+      : "Hunting Detected";
+  }
 }
 
 /* ---------------------------------------------------------- estop */
@@ -496,3 +522,5 @@ $("sys-reboot").onclick = async () => {
 };
 
 loadSystem();
+if (typeof SDiag !== "undefined") SDiag.init();
+if (typeof SChar !== "undefined") SChar.init();

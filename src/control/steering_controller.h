@@ -8,10 +8,15 @@
  * limits, rate limiting, deadband, overcurrent trip and feedback-loss
  * detection. All tuning comes from configuration and can be changed
  * live from the web UI.
+ *
+ * Diagnostic recording, PWM hysteresis, gain scheduling and optional
+ * feed-forward extend this same controller — they do not replace it.
  */
 #pragma once
 
 #include "control/pid.h"
+#include "control/steering_types.h"
+#include "core/types.h"
 #include "drivers/motor/bts7960.h"
 #include "drivers/steering/firgelli_feedback.h"
 #include "drivers/steering/p3022.h"
@@ -25,28 +30,54 @@ class SteeringController {
   /**
    * @brief One 200 Hz control step.
    * @param steeringCmd -1..+1 steering request from the arbiter
-   * @param steeringCurrentA measured actuator current
+   * @param steeringCurrentA measured actuator current (0 if INA absent)
    * @param outputEnabled false = force actuator off (safety)
+   * @param currentHealth INA health; overcurrent trip only when OK
    */
-  void step(float steeringCmd, float steeringCurrentA, bool outputEnabled);
+  void step(float steeringCmd, float steeringCurrentA, bool outputEnabled,
+            SensorHealth currentHealth, uint32_t loopMisses = 0);
 
   /// Refresh cached configuration (called when config revision changes).
   void refreshConfig();
 
   float estimatedAngleDeg() const { return actualAngleDeg_; }
   float actualPct() const { return actualPct_; }
+  float velocityPctS() const { return filtVel_; }
+  float feedforward() const { return feedforward_; }
+  SteerControlState controlState() const { return controlState_; }
 
  private:
   float commandToTargetPct(float cmd) const;
+  void recordSample(float setpoint, float pwm, bool outputEnabled,
+                    float currentA, bool currentValid);
+  void emitEdgeEvents();
 
   Bts7960 motor_;
   FirgelliFeedback feedback_;
   P3022 wheelEncoder_;
   Pid pid_;
-  float targetPct_ = 50.0f;    ///< rate-limited target
+  float targetPct_ = 50.0f;  ///< rate-limited target
   float actualPct_ = 50.0f;
   float actualAngleDeg_ = 0.0f;
   uint32_t lastStepUs_ = 0;
+  uint32_t cfgRev_ = 0xFFFFFFFFu;
+  float lastActualPct_ = 50.0f;
+  float lastTargetPct_ = 50.0f;
+  float rawVel_ = 0.0f;
+  float filtVel_ = 0.0f;
+  float feedforward_ = 0.0f;
+  float appliedPwm_ = 0.0f;
+  SteerCompConfig compCfg_{};
+  SteerCompState compSt_{};
+  SteerControlState controlState_ = SteerControlState::IDLE;
+  SteerControlState lastState_ = SteerControlState::IDLE;
+  int8_t lastDir_ = 0;
+  bool lastCalActive_ = false;
+  bool lastAtLimit_ = false;
+  bool lastFault_ = false;
+  bool lastPwmLimit_ = false;
+  bool velPrimed_ = false;
+  uint32_t loopMisses_ = 0;
 
  public:
   FirgelliFeedback& feedbackSensor() { return feedback_; }

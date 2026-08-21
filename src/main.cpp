@@ -32,6 +32,8 @@
 #include "services/logger.h"
 #include "services/ota_service.h"
 #include "services/safety.h"
+#include "services/steering_characterization.h"
+#include "services/steering_recorder.h"
 #include "services/telemetry.h"
 #include "web/web_server.h"
 
@@ -63,7 +65,8 @@ static void steerMotorTask(void*) {
                                safety.state() != VehicleState::ESTOP &&
                                safety.state() != VehicleState::FAULT;
 
-    steering.step(steerCmd, t.power.steeringCurrentA, outputEnabled);
+    steering.step(steerCmd, t.power.steeringCurrentA, outputEnabled,
+                  t.power.inaHealth, t.system.steerMisses);
     drive.step(leftT, rightT, t.drive.leftActualSpeed,
                t.drive.rightActualSpeed, t.power.leftCurrentA,
                t.power.rightCurrentA, outputEnabled);
@@ -173,6 +176,7 @@ static void telemetryTask(void*) {
     if (millis() - lastSend >= (uint32_t)(1000 / rate)) {
       lastSend = millis();
       webServer.broadcastTelemetry();
+      webServer.broadcastSteerDiag();
     }
     if (++divider >= 2) {  // 10 Hz
       divider = 0;
@@ -267,8 +271,10 @@ static void bootstrap() {
   config.begin();
   telemetry.begin();
   recorder.begin();
+  steerDiag.begin();
   safety.begin();
   calibration.begin();
+  steerChar.begin();
 
   steering.begin();  // forces steering outputs off
   drive.begin();     // forces drive outputs off
@@ -292,7 +298,7 @@ static void bootstrap() {
                           : VehicleState::NOT_CALIBRATED,
                       "boot complete");
 
-  xTaskCreatePinnedToCore(steerMotorTask, "steer_motor", 6144, nullptr, 5,
+  xTaskCreatePinnedToCore(steerMotorTask, "steer_motor", 8192, nullptr, 5,
                           nullptr, 1);
   xTaskCreatePinnedToCore(dynamicsTask, "dynamics", 8192, nullptr, 4, nullptr,
                           1);

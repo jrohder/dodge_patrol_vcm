@@ -13,6 +13,8 @@
 #include "control/differential_steering.h"
 #include "control/pid.h"
 #include "control/speed_calculator.h"
+#include "control/steering_compensation.h"
+#include "control/steering_types.h"
 #include "control/vehicle_model.h"
 #include "proto/protocol.h"
 
@@ -411,6 +413,146 @@ static void test_diff_inside_brake() {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, out.rightSpeed);
 }
 
+static void test_pid_integral_frozen_when_disallowed() {
+  Pid pid;
+  Pid::Gains g;
+  g.ki = 10.0f;
+  g.iMax = 50.0f;
+  g.outMax = 100.0f;
+  pid.setGains(g);
+  Pid::StepOpts opt;
+  opt.allowIntegral = false;
+  for (int i = 0; i < 100; ++i) pid.update(100.0f, 0.0f, 0.01f, opt);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, pid.iTerm());
+}
+
+static void test_pid_meas_derivative() {
+  Pid pid;
+  Pid::Gains g;
+  g.kd = 2.0f;
+  g.outMax = 100.0f;
+  pid.setGains(g);
+  Pid::StepOpts opt;
+  opt.useMeasDerivative = true;
+  opt.measDerivative = 5.0f;  // d(measured)/dt
+  const float out = pid.update(0.0f, 0.0f, 0.005f, opt);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, -10.0f, out);
+}
+
+static void test_packed_sample_roundtrip() {
+  TEST_ASSERT_EQUAL_UINT(28, sizeof(SteeringDiagPacked));
+  SteeringDiagnosticSample s;
+  s.timestamp_us = 123456789u;
+  s.setpoint = 51.25f;
+  s.raw_feedback = 2034.0f;
+  s.filtered_feedback = 50.5f;
+  s.error = 0.75f;
+  s.pwm = -18.5f;
+  s.direction = -1;
+  s.p_term = 1.25f;
+  s.i_term = 0.0f;
+  s.d_term = -0.5f;
+  s.feedforward = 3.0f;
+  s.actuator_velocity = -4.25f;
+  s.control_state = SteerControlState::MOVING_LEFT;
+  s.output_enabled = true;
+  s.current_valid = false;
+  s.current_a = 99.0f;  // must not appear when invalid
+  const SteeringDiagPacked p = packSteerSample(s);
+  const SteeringDiagnosticSample o = unpackSteerSample(p);
+  TEST_ASSERT_EQUAL_UINT32(123456789u, o.timestamp_us);
+  TEST_ASSERT_FLOAT_WITHIN(0.02f, 51.25f, o.setpoint);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, 2034.0f, o.raw_feedback);
+  TEST_ASSERT_FLOAT_WITHIN(0.02f, -18.5f, o.pwm);
+  TEST_ASSERT_EQUAL_INT8(-1, o.direction);
+  TEST_ASSERT_FALSE(o.current_valid);
+  TEST_ASSERT_EQUAL_UINT8((uint8_t)SteerControlState::MOVING_LEFT,
+                          (uint8_t)o.control_state);
+}
+
+static void test_hysteresis_does_not_boost_small_pwm() {
+  SteerCompConfig cfg;
+  cfg.startLeft = 18.0f;
+  cfg.startRight = 18.0f;
+  cfg.holdLeft = 11.0f;
+  cfg.holdRight = 11.0f;
+  cfg.holdError = 1.0f;
+  cfg.reengageError = 0.0f;
+  SteerCompState st;
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, applyPwmHysteresis(10.0f, 5.0f, cfg, st));
+  TEST_ASSERT_FALSE(st.moving);
+  const float go = applyPwmHysteresis(18.5f, 5.0f, cfg, st);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 18.5f, go);
+  TEST_ASSERT_TRUE(st.moving);
+  const float hold = applyPwmHysteresis(5.0f, 4.0f, cfg, st);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 11.0f, hold);
+}
+
+static void test_hysteresis_zero_start_passes_through() {
+  SteerCompConfig cfg;
+  cfg.reengageError = 0.0f;
+  SteerCompState st;
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 4.0f, applyPwmHysteresis(4.0f, 1.0f, cfg, st));
+}
+
+static void test_movement_repeatable() {
+  TEST_ASSERT_TRUE(movementRepeatable(0.5f, 0.6f, 0.4f));
+  TEST_ASSERT_FALSE(movementRepeatable(0.5f, -0.6f, 0.4f));
+  TEST_ASSERT_FALSE(movementRepeatable(0.01f, 0.6f, 0.4f));
+}
+
+static void test_scheduled_kp_inherits_zero() {
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 4.0f, scheduledKp(20.0f, 0, 0, 0, 10, 3, 4.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 8.0f, scheduledKp(20.0f, 8, 2, 1, 10, 3, 4.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 2.0f, scheduledKp(5.0f, 8, 2, 1, 10, 3, 4.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, scheduledKp(0.4f, 8, 2, 1, 10, 3, 4.0f));
+}
+
+static void test_recommend_keeps_i_zero() {
+  SteeringCharacterization c;
+  c.status = SteerCharStatus::OK;
+  c.minStartLeft = 17.4f;
+  c.minStartRight = 18.1f;
+  c.holdLeft = 11.0f;
+  c.holdRight = 12.0f;
+  c.maxVelLeft = 4.8f;
+  c.maxVelRight = 4.6f;
+  const SteerRecommendations r = recommendSteering(c, 4.0f, 0.05f, 1.0f, 100.0f);
+  TEST_ASSERT_TRUE(r.valid);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, r.ki);
+  TEST_ASSERT_TRUE(r.startLeft > 10.0f);
+  c.status = SteerCharStatus::FAILED;
+  const SteerRecommendations rFail = recommendSteering(c, 4.0f, 0.05f, 1.0f, 100.0f);
+  TEST_ASSERT_TRUE(rFail.valid);
+}
+
+static void test_performance_deviation() {
+  SteeringCharacterization b, n;
+  b.status = n.status = SteerCharStatus::OK;
+  b.minStartLeft = 17.4f;
+  n.minStartLeft = 21.8f;
+  b.maxVelLeft = 4.8f;
+  n.maxVelLeft = 3.7f;
+  const SteerDeviation d = compareCharacterization(b, n);
+  TEST_ASSERT_TRUE(d.comparable);
+  TEST_ASSERT_FLOAT_WITHIN(0.02f, 0.25f, d.minPwmLeftPct);
+  TEST_ASSERT_TRUE(d.maxVelLeftPct < -0.2f);
+}
+
+static void test_feedforward_off_when_empty() {
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, feedforwardPwm(4.0f, nullptr, nullptr, 0, 1.0f));
+}
+
+static void test_slew_pwm() {
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 10.0f, slewPwm(0.0f, 50.0f, 0.05f, 200.0f, 200.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 50.0f, slewPwm(0.0f, 50.0f, 0.05f, 0.0f, 0.0f));
+}
+
+static void test_sign_changes() {
+  float v[] = {1, 1, -1, -1, 1};
+  TEST_ASSERT_EQUAL_INT(2, countSignChanges(v, 5, 0.1f));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_crc16_known_vector);
@@ -429,6 +571,18 @@ int main(int, char**) {
   RUN_TEST(test_pid_output_clamped);
   RUN_TEST(test_pid_integral_antiwindup);
   RUN_TEST(test_pid_converges);
+  RUN_TEST(test_pid_integral_frozen_when_disallowed);
+  RUN_TEST(test_pid_meas_derivative);
+  RUN_TEST(test_packed_sample_roundtrip);
+  RUN_TEST(test_hysteresis_does_not_boost_small_pwm);
+  RUN_TEST(test_hysteresis_zero_start_passes_through);
+  RUN_TEST(test_movement_repeatable);
+  RUN_TEST(test_scheduled_kp_inherits_zero);
+  RUN_TEST(test_recommend_keeps_i_zero);
+  RUN_TEST(test_performance_deviation);
+  RUN_TEST(test_feedforward_off_when_empty);
+  RUN_TEST(test_slew_pwm);
+  RUN_TEST(test_sign_changes);
   RUN_TEST(test_model_freq_to_rpm);
   RUN_TEST(test_model_freq_to_speed);
   RUN_TEST(test_model_counts_to_distance);

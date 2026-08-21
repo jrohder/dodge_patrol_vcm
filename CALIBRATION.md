@@ -13,12 +13,15 @@ stores its results, timestamp and firmware version in NVS and shows a
 3. **Vehicle dimensions** — Configuration → vehicle: wheel diameter,
    wheelbase, track width. Configuration → drive: counts/revolution.
 4. **Steering calibration** — wizard below (required for commissioning).
-5. **Wheel/speed calibration** — motor test below.
-6. **IMU calibration** — orientation + zero.
-7. **Current sensor check** — zero offset capture.
-8. **Drive limits** — Configuration → drive: max speed, acceleration,
+   Manual Left/Center/Right ADC remains available without current sensing.
+5. **Smart characterization** (optional but recommended) — minimum PWM,
+   velocity, backlash. See [STEERING_DIAGNOSTICS.md](STEERING_DIAGNOSTICS.md).
+6. **Wheel/speed calibration** — motor test below.
+7. **IMU calibration** — orientation + zero.
+8. **Current sensor check** — zero offset capture (optional for steering).
+9. **Drive limits** — Configuration → drive: max speed, acceleration,
    deceleration; Configuration → safety: battery cutoff, timeouts.
-9. **Commission** — Calibration → Commissioning → *Mark Vehicle
+10. **Commission** — Calibration → Commissioning → *Mark Vehicle
    Commissioned*. The state machine moves to READY.
 
 ## Steering calibration (wizard)
@@ -75,6 +78,29 @@ keep the configured margin.
 With everything idle, Calibration → Current Sensors → *Capture Zero
 Offset*, then APPLY+SAVE `current.offset` in Configuration. Scale, warning,
 limit and trip levels per role are in Configuration → current.
+
+**Current sensing is optional for steering.** Manual Left/Center/Right
+entry and Smart Characterization work when the INA3221 is not fitted or
+not trusted.
+
+## Smart actuator characterization
+
+**Setup: vehicle supported, linkage clear, wheels free, people clear,
+emergency disconnect reachable.** This wizard does **not** rediscover
+travel limits and does **not** require current sensing. Run position
+calibration first.
+
+1. Calibration → **Smart Characterization**. Read the warning, tick the
+   confirmation, then Start (a second confirm is required).
+2. The actuator moves to center, then sweeps PWM left and right while
+   measuring Firgelli motion (repeatable movement = minimum start PWM).
+3. Review the results table, PWM vs velocity graphs, and recommended
+   settings. **Apply Recommended** writes RAM only; **SAVE** persists.
+   Feed-forward stays off until you enable it.
+4. **Save as Baseline** after a known-good run. Later runs show
+   **Performance Deviation** vs that baseline (not a specific failure).
+
+Full procedure, graph interpretation and export: [STEERING_DIAGNOSTICS.md](STEERING_DIAGNOSTICS.md).
 
 ## After calibration
 

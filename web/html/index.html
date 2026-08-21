@@ -130,6 +130,7 @@
       <button class="btn danger" id="cal-str-abort">Abort</button>
     </div>
     <h4>Manual override</h4>
+    <p class="hint">Position calibration does not require the current sensor. Enter Left / Center / Right ADC from the live Firgelli reading if auto-stop detection is unavailable.</p>
     <div class="row wrap">
       <label>Left <input type="number" id="cal-mleft" step="1"></label>
       <label>Center <input type="number" id="cal-mcenter" step="1"></label>
@@ -190,8 +191,73 @@
     <button class="btn primary" id="cal-imu-zero">ZERO IMU</button>
   </details>
 
+  <details><summary>Smart Characterization <span class="pill" id="cal-char-valid">--</span></summary>
+    <p class="hint">Measures minimum PWM, hold PWM, velocity and backlash from Firgelli position. Does <b>not</b> rediscover steering limits and does <b>not</b> require the INA3221. Run position calibration first.</p>
+    <div class="banner warn" id="char-warn">
+      <b>WARNING</b> — The steering actuator will move automatically.<br>
+      Ensure: vehicle is safely supported; steering linkage is unobstructed;
+      wheels can move freely; no person is near moving components;
+      emergency power disconnect is accessible.
+    </div>
+    <label class="chk"><input type="checkbox" id="char-ack"> I have verified the vehicle is safe</label>
+    <div class="row wrap">
+      <button class="btn primary" id="char-start">Start Smart Characterization</button>
+      <button class="btn danger" id="char-abort">Abort</button>
+    </div>
+    <div class="banner info" id="char-live">Idle</div>
+    <div class="progress hidden" id="char-prog"><div id="char-bar"></div><span id="char-pct">0%</span></div>
+    <h4>Results</h4>
+    <div class="tbl-wrap">
+      <table class="tbl" id="char-tbl">
+        <thead><tr><th></th><th>Left</th><th>Right</th></tr></thead>
+        <tbody>
+          <tr><td>Start PWM</td><td id="ch-sl">--</td><td id="ch-sr">--</td></tr>
+          <tr><td>Hold PWM</td><td id="ch-hl">--</td><td id="ch-hr">--</td></tr>
+          <tr><td>Preferred PWM</td><td id="ch-pl">--</td><td id="ch-pr">--</td></tr>
+          <tr><td>Max tested PWM</td><td id="ch-ml">--</td><td id="ch-mr">--</td></tr>
+          <tr><td>Max velocity</td><td id="ch-vl">--</td><td id="ch-vr">--</td></tr>
+          <tr><td>Backlash</td><td id="ch-bl">--</td><td id="ch-br">--</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="kv"><label>Overshoot / settling</label><b id="ch-set">--</b></div>
+    <div class="kv"><label>Status</label><b id="ch-status">--</b></div>
+    <h4>Recommended vs current</h4>
+    <p class="hint">Recommendations are conservative starting points. They are not applied until you press Apply Recommended, and they are never written automatically after an OTA.</p>
+    <pre class="notes" id="char-recs">Run a characterization to see recommendations.</pre>
+    <div class="row wrap">
+      <button class="btn primary" id="char-apply">Apply Recommended</button>
+      <button class="btn ghost" id="char-keep">Keep Current</button>
+      <button class="btn" id="char-baseline">Save as Baseline</button>
+    </div>
+    <h4>CURRENT vs BASELINE (Performance Deviation)</h4>
+    <p class="hint">Changes are labeled Performance Deviation — they do not diagnose a specific mechanical failure.</p>
+    <pre class="notes" id="char-dev">No baseline saved.</pre>
+    <h4>Characterization graphs</h4>
+    <div class="sdiag-canvas-wrap short"><canvas id="char-g1"></canvas></div>
+    <div class="hint">Graph 1 — PWM vs actuator velocity (left / right)</div>
+    <div class="sdiag-canvas-wrap short"><canvas id="char-g2"></canvas></div>
+    <div class="hint">Graph 2 — Time vs position (from last 60 s recorder)</div>
+    <div class="sdiag-canvas-wrap short"><canvas id="char-g3"></canvas></div>
+    <div class="hint">Graph 3 — PWM vs position error</div>
+    <div class="sdiag-canvas-wrap short"><canvas id="char-g4"></canvas></div>
+    <div class="hint">Graph 4 — Direction reversal / backlash</div>
+    <div class="row wrap">
+      <button class="btn" id="char-png">Download PNG</button>
+      <a class="btn" href="/api/cal/char/csv" download>Download CSV</a>
+      <a class="btn" href="/api/cal/char/json" download>Download JSON</a>
+      <button class="btn" id="char-report">Download Report</button>
+    </div>
+  </details>
+
+  <details><summary>Characterization History</summary>
+    <p class="hint">Stored on the vehicle (NVS). Opening a record shows values; it does not overwrite the live controller.</p>
+    <div id="char-hist"></div>
+    <button class="btn ghost" id="char-hist-refresh">Refresh History</button>
+  </details>
+
   <details><summary>Current Sensors</summary>
-    <p class="hint">With all motors off, capture the zero offset. Then APPLY+SAVE in Configuration &rarr; current.</p>
+    <p class="hint">Optional. Steering position calibration and smart characterization do not require the INA3221. With all motors off, capture the zero offset, then APPLY+SAVE in Configuration &rarr; current.</p>
     <button class="btn primary" id="cal-cur-zero">Capture Zero Offset</button>
   </details>
 
@@ -202,6 +268,66 @@
   </details>
 </section>
 
+<!-- ============================================================ STEERING DIAGNOSTICS -->
+<section id="page-steer" class="page">
+  <h2>Steering Diagnostics</h2>
+  <p class="hint">200 Hz recorder, 60-second rolling window. Display refreshes ~20 FPS; the controller is not paced by this page. Pause freezes the view only — recording continues.</p>
+  <div class="banner err hidden" id="sdiag-hunt">Hunting Detected</div>
+  <div class="grid small" id="sdiag-live">
+    <div class="card"><label>Setpoint</label><b><span id="sd-sp">--</span> %</b></div>
+    <div class="card"><label>Actual</label><b><span id="sd-act">--</span> %</b></div>
+    <div class="card"><label>Error</label><b id="sd-err">--</b></div>
+    <div class="card"><label>Raw ADC</label><b id="sd-raw">--</b></div>
+    <div class="card"><label>Filtered</label><b id="sd-filt">--</b></div>
+    <div class="card"><label>PWM</label><b id="sd-pwm">--</b></div>
+    <div class="card"><label>Velocity</label><b><span id="sd-vel">--</span> %/s</b></div>
+    <div class="card"><label>P</label><b id="sd-p">--</b></div>
+    <div class="card"><label>I</label><b id="sd-i">--</b></div>
+    <div class="card"><label>D</label><b id="sd-d">--</b></div>
+    <div class="card"><label>Feed Forward</label><b id="sd-ff">--</b></div>
+    <div class="card"><label>State</label><b id="sd-st">--</b></div>
+  </div>
+  <div class="row wrap" id="sdiag-presets">
+    <button class="btn sm" data-preset="basic">Basic</button>
+    <button class="btn sm" data-preset="loop">Control Loop</button>
+    <button class="btn sm" data-preset="mech">Mechanical</button>
+    <button class="btn sm" data-preset="char">Characterization</button>
+    <button class="btn sm" data-preset="all">Everything</button>
+  </div>
+  <div class="trace-toggles" id="sdiag-toggles"></div>
+  <div class="sdiag-canvas-wrap" id="sdiag-wrap">
+    <canvas id="sdiag-canvas"></canvas>
+  </div>
+  <div class="row wrap">
+    <button class="btn primary" id="sdiag-pause">PAUSE</button>
+    <button class="btn" id="sdiag-live">LIVE</button>
+    <button class="btn ghost" id="sdiag-reset">Reset View</button>
+    <button class="btn danger" id="sdiag-clear">CLEAR</button>
+  </div>
+  <div class="sdiag-cursor" id="sdiag-cursor">Touch the graph for a cursor</div>
+  <h3>Window statistics</h3>
+  <div class="grid small">
+    <div class="card"><label>RMS error</label><b id="sd-rms">--</b></div>
+    <div class="card"><label>Max error</label><b id="sd-maxe">--</b></div>
+    <div class="card"><label>Avg error</label><b id="sd-avge">--</b></div>
+    <div class="card"><label>Peak PWM</label><b id="sd-ppwm">--</b></div>
+    <div class="card"><label>Avg PWM</label><b id="sd-apwm">--</b></div>
+    <div class="card"><label>Max velocity</label><b id="sd-mvel">--</b></div>
+    <div class="card"><label>Dir changes</label><b id="sd-dch">--</b></div>
+    <div class="card"><label>PWM reversals</label><b id="sd-prev">--</b></div>
+    <div class="card"><label>Health</label><b id="sd-health">--</b></div>
+  </div>
+  <h3>Export</h3>
+  <div class="row wrap">
+    <a class="btn" href="/api/steer/diag/csv" download>Download CSV</a>
+    <a class="btn" href="/api/steer/diag/json" download>Download JSON</a>
+    <button class="btn" id="sdiag-session">Save Session</button>
+    <button class="btn" id="sdiag-export">Export Steering Diagnostics</button>
+    <button class="btn" id="sdiag-png">Download PNG</button>
+  </div>
+  <p class="hint">CSV/JSON are the full on-vehicle 60 s buffer (ESP32 timestamps). PNG is generated in the browser for the iPhone photo library. Export builds a ZIP of metadata, configuration, calibration, characterization and the diagnostic CSV.</p>
+</section>
+
 <!-- ============================================================ DIAGNOSTICS -->
 <section id="page-diag" class="page">
   <h2>Diagnostics</h2>
@@ -209,6 +335,7 @@
   <table class="tbl" id="flt-tbl"><thead><tr><th>Code</th><th>Description</th><th>Sev</th><th>Active</th><th>Count</th></tr></thead><tbody></tbody></table>
 
   <h3>Steering loop</h3>
+  <p class="hint"><a href="#" id="diag-open-steer">Open Steering Diagnostics</a> for the 60-second 200 Hz graph. This page keeps the generic vehicle overview; the event recorder below is the 30-second pre-fault log and is separate.</p>
   <div class="grid small">
     <div class="card"><label>Requested</label><b><span id="g-sreq">--</span> %</b></div>
     <div class="card"><label>Actual</label><b><span id="g-sact">--</span> %</b></div>
@@ -339,6 +466,7 @@
   <button data-page="remote">Remote</button>
   <button data-page="config">Config</button>
   <button data-page="cal">Cal</button>
+  <button data-page="steer">Steer</button>
   <button data-page="diag">Diag</button>
   <button data-page="logs">Logs</button>
   <button data-page="fw">FW</button>

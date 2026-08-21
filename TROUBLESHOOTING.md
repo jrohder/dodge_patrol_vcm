@@ -41,8 +41,14 @@ safe) until the condition clears; **WARNING** faults are logged and shown.
 - Check the active control source is enabled in Configuration → control.
 
 **Steering oscillates or is sluggish**
-- Tune `steering.pid_kp/ki/kd` live with APPLY while watching the PID
-  terms on the Diagnostics page. Raise the deadband if it hunts at center.
+- Open **Steer** (Steering Diagnostics) and watch setpoint vs filtered
+  position vs PWM at 200 Hz. Hunting shows as repeated PWM/error reversals.
+- Run **Smart Characterization** (does not require INA3221) for start/hold
+  PWM. Apply recommended settings to RAM, then SAVE if they help.
+- Tune `steering.pid_kp/ki/kd`, `steering.hold_p_gain` and deadband live
+  with APPLY. Keep I at 0 until the loop is stable. Do not enable
+  feed-forward until the PWM→velocity curve looks sane.
+- See [STEERING_DIAGNOSTICS.md](STEERING_DIAGNOSTICS.md).
 
 **Speed reads wrong**
 - Verify `drive.counts_per_rev` and wheel diameter; use the speed
@@ -65,5 +71,6 @@ safe) until the condition clears; **WARNING** faults are logged and shown.
 ## Diagnostics data to include in bug reports
 
 Download from the web UI: Logs → Download, Diagnostics → event recorder
-CSV, Configuration → Export JSON, plus firmware version from the System
-page.
+CSV, **Steer → Export Steering Diagnostics** (ZIP of config, calibration,
+characterization and the 60 s CSV), Configuration → Export JSON, plus
+firmware version from the System page.
