@@ -12,7 +12,7 @@ namespace vcm {
 CalibrationService calibration;
 
 static const char* kNamespace = "vcm_cal";
-static constexpr uint32_t kCalTimeoutMs = 30000;  ///< abort runaway wizard
+static constexpr uint32_t kCalTimeoutMs = 60000;  ///< abort runaway wizard
 
 void CalibrationService::begin() {
   Preferences p;
@@ -56,7 +56,10 @@ bool CalibrationService::startSteeringCal(const SteeringCalParams& params) {
   steerState_ = SteeringCalState::MOVE_LEFT;
   calStartMs_ = millis();
   lastMotionMs_ = millis();
+  lastAdc_ = 0;
   confirmStartMs_ = 0;
+  openLoopActive_ = false;
+  manualSteerActive_ = false;
   LOGI("CAL", "Steering auto-calibration started (pwm=%.0f%%, i>%.1fA, %lums)",
        params_.pwmPct, params_.currentThresholdA,
        (unsigned long)params_.noMotionMs);
@@ -72,7 +75,8 @@ void CalibrationService::abortSteeringCal() {
   LOGW("CAL", "Steering calibration ABORTED");
 }
 
-float CalibrationService::steeringCalStep(float feedbackAdc, float currentA) {
+float CalibrationService::steeringCalStep(float feedbackAdc, float currentA,
+                                           bool currentValid) {
   const uint32_t now = millis();
 
   // Global timeout guard: never let the wizard run away
@@ -87,25 +91,29 @@ float CalibrationService::steeringCalStep(float feedbackAdc, float currentA) {
     lastAdc_ = feedbackAdc;
     lastMotionMs_ = now;
   }
-  const bool noMotion = (now - lastMotionMs_) > params_.noMotionMs;
-  const bool currentHigh = currentA > params_.currentThresholdA;
+  const uint32_t stallMs =
+      currentValid ? params_.noMotionMs : max(params_.noMotionMs, (uint32_t)600);
+  const bool noMotion = (now - lastMotionMs_) > stallMs;
+  const bool currentHigh = currentValid && currentA > params_.currentThresholdA;
+  // With INA: stall = elevated current AND no motion (never current alone).
+  // Without INA: stall = no motion only (otherwise the wizard never finishes).
+  const bool stall = currentValid ? (currentHigh && noMotion) : noMotion;
   const bool invert = config.b(STR_INVERT);
   const float drivePwm = invert ? -params_.pwmPct : params_.pwmPct;
 
   switch (steerState_) {
     case SteeringCalState::MOVE_LEFT:
     case SteeringCalState::CONFIRM_LEFT: {
-      // Hard stop = current rise AND no position change, held for the
-      // configured period (never current alone).
-      if (currentHigh && noMotion) {
+      if (stall) {
         if (steerState_ == SteeringCalState::MOVE_LEFT) {
           steerState_ = SteeringCalState::CONFIRM_LEFT;
           confirmStartMs_ = now;
-        } else if (now - confirmStartMs_ > params_.noMotionMs) {
+        } else if (now - confirmStartMs_ > stallMs) {
           calLeft_ = feedbackAdc;
           steerState_ = SteeringCalState::SETTLE_LEFT;
           settleStartMs_ = now;
-          LOGI("CAL", "Left hard stop at ADC %.0f", calLeft_);
+          LOGI("CAL", "Left hard stop at ADC %.0f (I=%.2fA ina=%d)", calLeft_,
+               currentA, currentValid ? 1 : 0);
           return 0.0f;  // remove power immediately
         }
       } else if (steerState_ == SteeringCalState::CONFIRM_LEFT) {
@@ -121,15 +129,16 @@ float CalibrationService::steeringCalStep(float feedbackAdc, float currentA) {
       return 0.0f;
     case SteeringCalState::MOVE_RIGHT:
     case SteeringCalState::CONFIRM_RIGHT: {
-      if (currentHigh && noMotion) {
+      if (stall) {
         if (steerState_ == SteeringCalState::MOVE_RIGHT) {
           steerState_ = SteeringCalState::CONFIRM_RIGHT;
           confirmStartMs_ = now;
-        } else if (now - confirmStartMs_ > params_.noMotionMs) {
+        } else if (now - confirmStartMs_ > stallMs) {
           calRight_ = feedbackAdc;
           steerState_ = SteeringCalState::SETTLE_RIGHT;
           settleStartMs_ = now;
-          LOGI("CAL", "Right hard stop at ADC %.0f", calRight_);
+          LOGI("CAL", "Right hard stop at ADC %.0f (I=%.2fA ina=%d)", calRight_,
+               currentA, currentValid ? 1 : 0);
           return 0.0f;
         }
       } else if (steerState_ == SteeringCalState::CONFIRM_RIGHT) {
@@ -224,14 +233,37 @@ void CalibrationService::setManualSteeringTarget(float pct, bool enabled) {
     if (!safety.requestState(VehicleState::DIAGNOSTIC, "manual steering test"))
       return;
   }
+  openLoopActive_ = false;
   manualSteerTarget_ = constrain(pct, 0.0f, 100.0f);
   manualSteerActive_ = enabled;
-  if (!enabled && !motorTest_.active &&
+  if (!enabled && !motorTest_.active && !openLoopActive_ &&
       safety.state() == VehicleState::DIAGNOSTIC) {
     safety.requestState(commissioned_ ? VehicleState::READY
                                       : VehicleState::NOT_CALIBRATED,
                         "manual steering test ended");
   }
+}
+
+void CalibrationService::setOpenLoopSteer(float pwmPct, bool enabled) {
+  if (enabled) {
+    if (steeringCalActive()) return;
+    if (!safety.testMotionAllowed() &&
+        !safety.requestState(VehicleState::DIAGNOSTIC, "usb open-loop steer")) {
+      LOGW("CAL", "open-loop steer rejected");
+      return;
+    }
+  }
+  manualSteerActive_ = false;
+  openLoopPwm_ = constrain(pwmPct, -40.0f, 40.0f);
+  openLoopActive_ = enabled;
+  if (!enabled && !motorTest_.active &&
+      safety.state() == VehicleState::DIAGNOSTIC) {
+    safety.requestState(commissioned_ ? VehicleState::READY
+                                      : VehicleState::NOT_CALIBRATED,
+                        "usb open-loop steer ended");
+  }
+  LOGI("CAL", "open-loop steer %s pwm=%.1f", enabled ? "ON" : "off",
+       enabled ? openLoopPwm_ : 0.0f);
 }
 
 void CalibrationService::captureCurrentOffset(float measuredOffsetA) {

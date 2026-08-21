@@ -35,7 +35,10 @@
 #include "services/steering_characterization.h"
 #include "services/steering_recorder.h"
 #include "services/telemetry.h"
+#include "services/usb_console.h"
 #include "web/web_server.h"
+
+#include <nvs_flash.h>
 
 namespace vcm {
 
@@ -135,6 +138,18 @@ static void sensorTask(void*) {
       imu.zero();
     }
 
+    static uint8_t i2cRetryDiv = 0;
+    if (ina.health() == SensorHealth::NOT_PRESENT ||
+        imu.health() == SensorHealth::NOT_PRESENT) {
+      if (++i2cRetryDiv >= 200) {  // 2 s
+        i2cRetryDiv = 0;
+        if (ina.health() == SensorHealth::NOT_PRESENT) ina.begin();
+        if (imu.health() == SensorHealth::NOT_PRESENT) imu.begin();
+      }
+    } else {
+      i2cRetryDiv = 0;
+    }
+
     if (ina.health() == SensorHealth::FAULT) safety.raiseFault(FLT_INA_FAIL);
     else if (ina.health() == SensorHealth::OK) safety.clearFault(FLT_INA_FAIL);
     if (imu.health() == SensorHealth::FAULT) safety.raiseFault(FLT_IMU_FAIL);
@@ -178,6 +193,7 @@ static void telemetryTask(void*) {
       webServer.broadcastTelemetry();
       webServer.broadcastSteerDiag();
     }
+    pollUsbConsole();
     if (++divider >= 2) {  // 10 Hz
       divider = 0;
       recorder.record(telemetry.snapshot());
@@ -198,14 +214,18 @@ static void systemTask(void*) {
     wifiManager.tick();
     webServer.tick();
 
-    LOGI("NANO",
-         "online=%d pkts=%lu telem=%lu crc=%lu frm=%lu bytes=%lu acks=%lu rx=%d",
-         nano.online((uint32_t)config.i(SAF_NANO_TIMEOUT)) ? 1 : 0,
-         (unsigned long)nano.packetsReceived(),
-         (unsigned long)nano.telemetryReceived(),
-         (unsigned long)nano.crcErrors(), (unsigned long)nano.frameErrors(),
-         (unsigned long)nano.bytesReceived(),
-         (unsigned long)nano.acksReceived(), nano.rxPinLevel());
+    static uint8_t nanoLogDiv = 0;
+    if (++nanoLogDiv >= 10) {
+      nanoLogDiv = 0;
+      LOGI("NANO",
+           "online=%d pkts=%lu telem=%lu crc=%lu frm=%lu bytes=%lu acks=%lu rx=%d",
+           nano.online((uint32_t)config.i(SAF_NANO_TIMEOUT)) ? 1 : 0,
+           (unsigned long)nano.packetsReceived(),
+           (unsigned long)nano.telemetryReceived(),
+           (unsigned long)nano.crcErrors(), (unsigned long)nano.frameErrors(),
+           (unsigned long)nano.bytesReceived(),
+           (unsigned long)nano.acksReceived(), nano.rxPinLevel());
+    }
 
     // Boot button held 10 s at runtime = factory reset
     if (digitalRead(pins::BOOT_BUTTON) == LOW) {
@@ -256,6 +276,19 @@ static void bootSelfTest() {
 }
 
 static void bootstrap() {
+  // Confirm this OTA slot before USB CDC enumerates. The host toggling DTR
+  // on the native USB port resets the chip; with rollback still pending the
+  // bootloader would revert to the previous firmware (OTA "succeeds" then
+  // still shows the old version).
+  ota.confirmRunningImage();
+
+  esp_err_t nvs = nvs_flash_init();
+  if (nvs == ESP_ERR_NVS_NO_FREE_PAGES || nvs == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    nvs_flash_erase();
+    nvs_flash_init();
+  }
+
+  Serial0.begin(115200);  // UART0 on GPIO 43/44 — USB-UART dongle / silkscreen TX-RX
   Serial.begin(115200);
 #if ARDUINO_USB_CDC_ON_BOOT
   Serial.setTxTimeoutMs(0);  // never stall tasks if the USB host isn't reading
@@ -271,6 +304,8 @@ static void bootstrap() {
   config.begin();
   telemetry.begin();
   recorder.begin();
+  LOGI("BOOT", "heap %u  psram %u", static_cast<unsigned>(ESP.getFreeHeap()),
+       static_cast<unsigned>(ESP.getFreePsram()));
   steerDiag.begin();
   safety.begin();
   calibration.begin();
@@ -279,7 +314,24 @@ static void bootstrap() {
   steering.begin();  // forces steering outputs off
   drive.begin();     // forces drive outputs off
 
-  Wire.begin(pins::I2C_SDA, pins::I2C_SCL, 400000);
+  Wire.begin(pins::I2C_SDA, pins::I2C_SCL, 100000);
+  Wire.setTimeOut(20);
+  pinMode(pins::I2C_SDA, INPUT_PULLUP);
+  pinMode(pins::I2C_SCL, INPUT_PULLUP);
+  LOGI("I2C", "bus GPIO%d/GPIO%d @ 100 kHz", pins::I2C_SDA, pins::I2C_SCL);
+  int nAck = 0;
+  for (uint8_t a = 0x08; a < 0x78; ++a) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      LOGI("I2C", "ack 0x%02X", a);
+      nAck++;
+    }
+  }
+  if (nAck == 0) {
+    LOGW("I2C", "no devices — SDA=GPIO9 SCL=GPIO10, 3.3V, GND, 4.7k pull-ups");
+  } else {
+    LOGI("I2C", "%d device(s) on the bus", nAck);
+  }
   ina.begin();
   imu.begin();
   nano.begin();

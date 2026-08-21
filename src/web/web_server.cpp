@@ -1,4 +1,5 @@
 #include "web/web_server.h"
+#include "web/web_auth.h"
 
 #include <ArduinoJson.h>
 #include <cstring>
@@ -18,12 +19,26 @@ namespace vcm {
 VcmWebServer webServer;
 
 void VcmWebServer::begin() {
+  webAuth.begin();
+  webAuth.attach(server_);
   setupStatic();
   setupApi();
   setupOtaApi();
   setupSteeringApi();
   setupWebSocket();
   server_.onNotFound([](AsyncWebServerRequest* req) {
+    const String url = req->url();
+    const String host = req->host();
+    if (url.indexOf("hotspot-detect") >= 0 || url.indexOf("success.html") >= 0 ||
+        host.indexOf("apple") >= 0 || host.indexOf("captive") >= 0) {
+      req->send(200, "text/html",
+                "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
+      return;
+    }
+    if (url.indexOf("generate_204") >= 0) {
+      req->send(204);
+      return;
+    }
     req->send(404, "text/plain", "Not found");
   });
   server_.begin();

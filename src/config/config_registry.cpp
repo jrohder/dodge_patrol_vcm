@@ -74,8 +74,12 @@ void ConfigRegistry::loadFromNvs() {
   prefs.end();
 
   if (storedSchema != 0 && storedSchema != SCHEMA_VERSION) {
-    // Migration point: adjust/rename values here when SCHEMA_VERSION bumps.
-    // Unknown keys are simply ignored, new keys keep their defaults.
+    if (storedSchema < 4) {
+      applyStringByKey("wifi.ap_password", "");
+    }
+    if (storedSchema < 5) {
+      applyByKey("steering.feedback_filter", 8.0f);
+    }
     LOGW("CONFIG", "Migrated configuration schema v%u -> v%u", storedSchema,
          SCHEMA_VERSION);
     save();

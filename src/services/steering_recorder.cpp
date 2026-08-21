@@ -23,13 +23,10 @@ void SteeringRecorder::begin() {
       usingPsram_ = true;
       break;
     }
-    p = heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (p) {
-      buf_ = static_cast<SteeringDiagPacked*>(p);
-      capacity_ = cap;
-      usingPsram_ = false;
-      break;
-    }
+    // Never park this ring in DRAM. 6000 samples is 164 kB and left ~17 kB
+    // for WiFi/DHCP/AsyncTCP — iPhone associated then dropped with no IP.
+    LOGW("SDIAG", "PSRAM alloc failed for %u kB; not using SRAM",
+         (unsigned)(bytes / 1024));
   }
   if (!buf_) {
     LOGE("SDIAG", "Failed to allocate steering diagnostic buffer");

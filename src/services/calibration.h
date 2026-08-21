@@ -8,9 +8,10 @@
  * until steering calibration is valid.
  *
  * Steering auto-calibration: user-initiated only, starts at very low PWM,
- * and detects a hard stop when current rises AND position stops changing
- * for a configurable period - never from current alone. Power is removed
- * immediately on detection.
+ * and detects a hard stop when position stops changing. If the INA3221
+ * is present, current must also be elevated (never current alone). Without
+ * a current sensor, stall-on-position is used so travel calibration still
+ * works.
  */
 #pragma once
 
@@ -42,7 +43,7 @@ struct SteeringCalParams {
   float pwmPct = 25.0f;          ///< low commissioning PWM
   float currentThresholdA = 3.0f;///< current indicating a possible stop
   uint32_t noMotionMs = 300;     ///< position-unchanged confirmation time
-  float motionEpsilon = 6.0f;    ///< ADC counts considered "no movement"
+  float motionEpsilon = 12.0f;   ///< ADC counts considered "no movement"
 };
 
 struct MotorTest {
@@ -61,7 +62,8 @@ class CalibrationService {
   void abortSteeringCal();
   /// One 200 Hz step; returns the PWM to apply to the steering actuator.
   /// Called by the steering controller while calibration owns the actuator.
-  float steeringCalStep(float feedbackAdc, float currentA);
+  /// @param currentValid false when INA3221 is absent (stall-on-position).
+  float steeringCalStep(float feedbackAdc, float currentA, bool currentValid);
   SteeringCalState steeringCalState() const { return steerState_; }
   const SteeringCalData& steeringCal() const { return steerData_; }
   bool steeringCalActive() const {
@@ -87,6 +89,11 @@ class CalibrationService {
   bool manualSteeringActive() const { return manualSteerActive_; }
   float manualSteeringTarget() const { return manualSteerTarget_; }
 
+  /// USB/open-loop PWM, ±40%, works before travel calibration.
+  void setOpenLoopSteer(float pwmPct, bool enabled);
+  bool openLoopSteerActive() const { return openLoopActive_; }
+  float openLoopSteerPwm() const { return openLoopPwm_; }
+
   // -- current sensor calibration -------------------------------------------
   /// Capture the present current readings as the zero offset.
   void captureCurrentOffset(float measuredOffsetA);
@@ -109,6 +116,8 @@ class CalibrationService {
   MotorTest motorTest_;
   bool manualSteerActive_ = false;
   float manualSteerTarget_ = 50.0f;
+  bool openLoopActive_ = false;
+  float openLoopPwm_ = 0.0f;
   bool commissioned_ = false;
 };
 

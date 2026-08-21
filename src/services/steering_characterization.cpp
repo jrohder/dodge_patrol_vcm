@@ -51,6 +51,7 @@ bool SteeringCharacterizationService::start(bool confirmed) {
   if (!confirmed) return false;
   if (active()) return false;
   if (calibration.steeringCalActive()) return false;
+  calibration.setOpenLoopSteer(0, false);
   if (!config.b(STR_CHAR_ENABLE)) {
     LOGW("SCHAR", "Smart characterization disabled in config");
     return false;
@@ -382,7 +383,7 @@ float SteeringCharacterizationService::step(float actualPct, float filteredAdc,
           (phase_ == SteerCharPhase::MOVE_CENTER) ? 10
           : (phase_ == SteerCharPhase::RETURN_CENTER_1) ? 45
                                                         : 70;
-      if (fabsf(actualPct - centerTarget_) < 1.8f &&
+      if (fabsf(actualPct - centerTarget_) < 2.5f &&
           now - phaseStartMs_ > 400) {
         if (phase_ == SteerCharPhase::MOVE_CENTER) {
           stillPos0_ = actualPct;
@@ -403,7 +404,7 @@ float SteeringCharacterizationService::step(float actualPct, float filteredAdc,
           settleLastDir_ = 0;
           settleStartUs_ = micros();
         }
-      } else if (now - phaseStartMs_ > 8000) {
+      } else if (now - phaseStartMs_ > 30000) {
         fail("failed to reach center");
       }
       return 0.0f;

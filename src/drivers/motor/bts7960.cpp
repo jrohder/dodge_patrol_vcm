@@ -28,6 +28,16 @@ void Bts7960::write(float rDuty, float lDuty) {
   ledcWrite(chL_, (uint32_t)(constrain(lDuty, 0.0f, 100.0f) * kMaxDuty / 100.0f));
 }
 
+void Bts7960::applyStop(StopMode mode) {
+  // IBT-2 / BTS7960: both PWM high shorts the motor (brake);
+  // both PWM low is high-Z (coast). Drive uses this; steering stays COAST.
+  if (mode == StopMode::BRAKE) {
+    write(100.0f, 100.0f);
+  } else {
+    write(0.0f, 0.0f);
+  }
+}
+
 void Bts7960::drive(float pct) {
   pct = constrain(pct, -maxPct_, maxPct_);
   currentPct_ = pct;
@@ -38,19 +48,13 @@ void Bts7960::drive(float pct) {
   } else if (pct < -0.05f) {
     write(0.0f, -pct);
   } else {
-    // BTS7960: both inputs low = coast (high-Z); both PWM'd low-side = brake.
-    // We implement brake as both outputs low duty 100 is unsafe; use both 0
-    // (coast) or both enabled at 0 duty -> effectively coast. True dynamic
-    // braking shorts the motor through the low-side switches by driving
-    // both LPWM/RPWM low with EN high; on common BTS7960 boards tying both
-    // PWM inputs low achieves the same via freewheel diodes.
-    write(0.0f, 0.0f);
+    applyStop(stopMode_);
   }
 }
 
-void Bts7960::stop(StopMode) {
+void Bts7960::stop(StopMode mode) {
   currentPct_ = 0.0f;
-  write(0.0f, 0.0f);
+  applyStop(mode);
 }
 
 }  // namespace vcm

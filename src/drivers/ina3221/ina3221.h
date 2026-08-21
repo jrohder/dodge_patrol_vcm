@@ -16,7 +16,8 @@ namespace vcm {
 
 class Ina3221 {
  public:
-  bool begin();
+  bool begin();  ///< probes 0x40–0x43 (A0 strap)
+  uint8_t address() const { return addr_; }
 
   /// Read all channels. Call at 100 Hz.
   /// @param shuntMilliOhm shunt resistor value (config)
@@ -28,8 +29,10 @@ class Ina3221 {
   SensorHealth health() const { return health_; }
 
  private:
-  bool readReg(uint8_t reg, uint16_t& value);
+  bool readReg(uint8_t addr, uint8_t reg, uint16_t& value);
+  bool probe(uint8_t addr);
 
+  uint8_t addr_ = 0x40;
   float currentA_[3] = {0, 0, 0};
   float busVoltage_ = 0.0f;
   SensorHealth health_ = SensorHealth::NOT_PRESENT;

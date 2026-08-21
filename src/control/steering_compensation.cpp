@@ -174,9 +174,8 @@ SteerRecommendations recommendSteering(const SteeringCharacterization& c,
   SteerRecommendations r;
   const bool haveData = c.nPoints > 0 || c.minStartLeft > 0.0f ||
                         c.minStartRight > 0.0f;
-  if (c.status == SteerCharStatus::INVALID || !haveData) return r;
-  if (c.status != SteerCharStatus::OK && c.status != SteerCharStatus::FAILED)
-    return r;
+  if (!haveData) return r;
+  // INVALID happens when analyze() runs before finishOk() sets OK.
   r.valid = true;
   r.startLeft = c.minStartLeft;
   r.startRight = c.minStartRight;

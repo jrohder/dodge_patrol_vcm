@@ -71,10 +71,11 @@ python -m esptool --chip esp32s3 write_flash 0x0 dodge_patrol_vcm-<ver>-factory.
 
 ### First boot
 
-1. The VCM starts a WiFi access point **DodgePatrol-VCM**
-   (password `dodgepatrol`).
-2. Connect with your phone and open **http://192.168.4.1** (or
-   `http://dodge-patrol.local`).
+1. The VCM starts an **open** WiFi access point **DodgePatrol-VCM** (no
+   network password — iPhone/Mac WPA on ESP32 soft-AP is unreliable).
+2. Connect and open **http://192.168.4.1**. Enter the dashboard PIN once
+   on that phone or computer (default `dodgepatrol`). The device is then
+   remembered.
 3. The vehicle boots **NOT COMMISSIONED** — driving is locked out until
    steering calibration is complete. Follow [CALIBRATION.md](CALIBRATION.md).
 4. Optionally join your home WiFi: Configuration → wifi → set mode/SSID,

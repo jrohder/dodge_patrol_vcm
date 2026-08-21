@@ -31,7 +31,7 @@
     "steering.soft_limit_margin": 3.0,
     "steering.invert_output": 0,
     "steering.center_trim": 0.0,
-    "steering.feedback_filter": 30.0,
+    "steering.feedback_filter": 8.0,
     "steering.feedback_min_valid": 50,
     "steering.feedback_max_valid": 4045,
     "steering.minimum_start_pwm_left": 0.0,
@@ -129,7 +129,8 @@
   "strings": {
     "vehicle.name": "Dodge Patrol",
     "wifi.ap_ssid": "DodgePatrol-VCM",
-    "wifi.ap_password": "dodgepatrol",
+    "wifi.ap_password": "",
+    "web.access_pin": "dodgepatrol",
     "wifi.sta_ssid": "",
     "wifi.sta_password": "",
     "wifi.hostname": "dodge-patrol",

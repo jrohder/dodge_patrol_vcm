@@ -21,6 +21,10 @@ document.querySelectorAll("#tabbar button").forEach((btn) => {
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
+  if (res.status === 401) {
+    $("gate").classList.remove("hidden");
+    throw new Error("auth");
+  }
   return res.json().catch(() => ({}));
 }
 function post(path, body) {
@@ -58,7 +62,38 @@ function setConn(up) {
   el.classList.toggle("off", !up);
 }
 function wsSend(obj) { if (wsUp && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
-wsConnect();
+
+async function bootUi() {
+  try {
+    const s = await fetch("/api/auth/status").then((r) => r.json());
+    if (s.authed) {
+      $("gate").classList.add("hidden");
+      wsConnect();
+      return;
+    }
+  } catch (_) { /* show gate */ }
+  $("gate").classList.remove("hidden");
+}
+$("gate-go").onclick = async () => {
+  $("gate-err").classList.add("hidden");
+  const pin = $("gate-pin").value;
+  const res = await fetch("/api/auth/unlock", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pin }),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!d.ok) {
+    $("gate-err").classList.remove("hidden");
+    return;
+  }
+  $("gate").classList.add("hidden");
+  wsConnect();
+};
+$("gate-pin").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("gate-go").click();
+});
+bootUi();
 Units.refreshLabels();
 setInterval(() => { if (wsUp && Date.now() - lastTelemetry > 4000) setConn(false); }, 2000);
 
@@ -484,6 +519,10 @@ $("fw-file").addEventListener("change", (e) => {
 });
 $("fw-upload").onclick = async () => {
   if (!fwFile || !confirm("Flash this firmware image?")) return;
+  if (/factory|merged/i.test(fwFile.name)) {
+    alert("That is the USB factory image. Upload dodge_patrol_vcm-<ver>.bin (the smaller file without \"factory\" in the name).");
+    return;
+  }
   const form = new FormData();
   form.append("firmware", fwFile);
   $("fw-upload").disabled = true;

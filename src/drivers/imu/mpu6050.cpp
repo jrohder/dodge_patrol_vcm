@@ -6,36 +6,74 @@
 
 namespace vcm {
 
-static constexpr uint8_t ADDR = 0x68;
 static constexpr uint8_t REG_PWR_MGMT_1 = 0x6B;
 static constexpr uint8_t REG_CONFIG = 0x1A;
+static constexpr uint8_t REG_WHO_AM_I = 0x75;
 static constexpr uint8_t REG_ACCEL_XOUT_H = 0x3B;
 static constexpr float ACCEL_LSB_PER_G = 16384.0f;  ///< +/-2g range
 static constexpr float GYRO_LSB_PER_DPS = 131.0f;   ///< +/-250 dps range
 
+bool Mpu6050::probe(uint8_t addr) {
+  Wire.beginTransmission(addr);
+  Wire.write(REG_WHO_AM_I);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom((int)addr, 1) != 1) return false;
+  const uint8_t id = Wire.read();
+  // MPU6050=0x68, MPU6500=0x70, MPU9250=0x71, some clones echo the address
+  const bool ok = (id == 0x68 || id == 0x70 || id == 0x71 || id == 0x73 ||
+                   id == addr);
+  if (ok) LOGI("IMU", "WHO_AM_I=0x%02X at 0x%02X", id, addr);
+  return ok;
+}
+
 bool Mpu6050::begin() {
-  Wire.beginTransmission(ADDR);
-  Wire.write(REG_PWR_MGMT_1);
-  Wire.write(0x00);  // wake, internal oscillator
-  if (Wire.endTransmission() != 0) {
+  const uint8_t candidates[] = {0x68, 0x69};
+  bool found = false;
+  for (uint8_t a : candidates) {
+    if (probe(a)) {
+      addr_ = a;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    // Some modules NACK WHO_AM_I but still wake on PWR_MGMT_1.
+    for (uint8_t a : candidates) {
+      Wire.beginTransmission(a);
+      Wire.write(REG_PWR_MGMT_1);
+      Wire.write(0x00);
+      if (Wire.endTransmission() == 0) {
+        addr_ = a;
+        found = true;
+        LOGI("IMU", "woke device at 0x%02X (no WHO_AM_I)", a);
+        break;
+      }
+    }
+  }
+  if (!found) {
     health_ = SensorHealth::NOT_PRESENT;
-    LOGW("IMU", "MPU6050 not detected at 0x%02X", ADDR);
+    LOGW("IMU", "MPU6050 not detected at 0x68/0x69");
     return false;
   }
-  Wire.beginTransmission(ADDR);
+  Wire.beginTransmission(addr_);
+  Wire.write(REG_PWR_MGMT_1);
+  Wire.write(0x00);  // wake, internal oscillator
+  Wire.endTransmission();
+  Wire.beginTransmission(addr_);
   Wire.write(REG_CONFIG);
   Wire.write(0x03);  // DLPF ~44 Hz
   Wire.endTransmission();
   health_ = SensorHealth::OK;
-  LOGI("IMU", "MPU6050 online");
+  failCount_ = 0;
+  LOGI("IMU", "IMU online at 0x%02X", addr_);
   return true;
 }
 
 bool Mpu6050::readRegisters(int16_t out[7]) {
-  Wire.beginTransmission(ADDR);
+  Wire.beginTransmission(addr_);
   Wire.write(REG_ACCEL_XOUT_H);
   if (Wire.endTransmission(false) != 0) return false;
-  if (Wire.requestFrom((int)ADDR, 14) != 14) return false;
+  if (Wire.requestFrom((int)addr_, 14) != 14) return false;
   for (int i = 0; i < 7; ++i) {
     out[i] = (int16_t)((Wire.read() << 8) | Wire.read());
   }

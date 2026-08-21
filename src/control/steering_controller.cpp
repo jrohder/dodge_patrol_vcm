@@ -20,6 +20,7 @@ void SteeringController::begin() {
   motor_ = Bts7960("STEER", pins::STEER_RPWM, pins::STEER_LPWM,
                    pins::CH_STEER_R, pins::CH_STEER_L);
   motor_.begin();
+  motor_.setStopMode(Bts7960::StopMode::COAST);  // never short the actuator
   feedback_.begin();
   wheelEncoder_.begin();
   refreshConfig();
@@ -195,12 +196,24 @@ void SteeringController::step(float steeringCmd, float steeringCurrentA,
   // --- calibration wizard owns the actuator --------------------------------
   if (calActive) {
     const float calPwm =
-        calibration.steeringCalStep(feedback_.filtered(), steeringCurrentA);
+        calibration.steeringCalStep(feedback_.filtered(), steeringCurrentA,
+                                    currentValid);
     motor_.drive(calPwm);
     appliedPwm_ = calPwm;
     feedforward_ = 0.0f;
     controlState_ = SteerControlState::CALIBRATION;
     publish(actualPct_, calPwm);
+    return;
+  }
+
+  // --- USB open-loop PWM (pre-cal jog / invert check) ----------------------
+  if (calibration.openLoopSteerActive()) {
+    const float ol = calibration.openLoopSteerPwm();
+    motor_.drive(ol);
+    appliedPwm_ = ol;
+    feedforward_ = 0.0f;
+    controlState_ = SteerControlState::CALIBRATION;
+    publish(actualPct_, ol);
     return;
   }
 
