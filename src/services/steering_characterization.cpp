@@ -604,8 +604,8 @@ void SteeringCharacterizationService::saveHistory() {
   if (!p.begin(kNs, false)) return;
   p.putUChar("nhist", histCount_);
   for (uint8_t i = 0; i < histCount_; ++i) {
-    char key[8];
-    snprintf(key, sizeof(key), "h%u", i);
+    char key[16];
+    snprintf(key, sizeof(key), "h%u", (unsigned)i);
     p.putBytes(key, &history_[i], sizeof(history_[i]));
   }
   p.end();
@@ -619,8 +619,8 @@ void SteeringCharacterizationService::loadFromNvs() {
   histCount_ = p.getUChar("nhist", 0);
   if (histCount_ > kSteerCharHistory) histCount_ = kSteerCharHistory;
   for (uint8_t i = 0; i < histCount_; ++i) {
-    char key[8];
-    snprintf(key, sizeof(key), "h%u", i);
+    char key[16];
+    snprintf(key, sizeof(key), "h%u", (unsigned)i);
     p.getBytes(key, &history_[i], sizeof(history_[i]));
   }
   p.end();
