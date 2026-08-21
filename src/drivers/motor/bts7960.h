@@ -2,9 +2,10 @@
  * @file bts7960.h
  * @brief BTS7960 dual half-bridge motor driver (RPWM/LPWM) via ESP32 LEDC.
  *
- * Outputs default OFF: pins are driven to a known inactive state in
- * begin() as early as possible (PCB pull-downs provide hardware backup;
- * this is the software backup).
+ * Outputs default OFF (both PWM low = coast) in begin() as early as
+ * possible. At zero command: COAST = RPWM and LPWM low; BRAKE = both high
+ * (IBT-2 / BTS7960 short-brake). Steering uses COAST; drive follows
+ * drive.brake_mode.
  */
 #pragma once
 
@@ -46,6 +47,7 @@ class Bts7960 {
 
  private:
   void write(float rDuty, float lDuty);
+  void applyStop(StopMode mode);
 
   const char* name_ = "?";
   int rpwmPin_ = -1, lpwmPin_ = -1, chR_ = -1, chL_ = -1;

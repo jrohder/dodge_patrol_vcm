@@ -63,7 +63,8 @@ bool SafetyManager::transitionValid(VehicleState from, VehicleState to) const {
     case VehicleState::OTA_UPDATE:
       return to == VehicleState::READY || to == VehicleState::NOT_CALIBRATED;
     case VehicleState::FAULT:
-      return to == VehicleState::READY || to == VehicleState::NOT_CALIBRATED;
+      return to == VehicleState::READY || to == VehicleState::NOT_CALIBRATED ||
+             to == VehicleState::CALIBRATION || to == VehicleState::DIAGNOSTIC;
     default:
       return false;
   }
@@ -85,7 +86,8 @@ bool SafetyManager::requestState(VehicleState next, const char* reason) {
 void SafetyManager::tick(bool commandActive, bool commissioned) {
   const VehicleState cur = state_;
   if (anyTripActive() && cur != VehicleState::FAULT &&
-      cur != VehicleState::ESTOP && cur != VehicleState::OTA_UPDATE) {
+      cur != VehicleState::ESTOP && cur != VehicleState::OTA_UPDATE &&
+      cur != VehicleState::CALIBRATION && cur != VehicleState::DIAGNOSTIC) {
     requestState(VehicleState::FAULT, "trip fault active");
     return;
   }

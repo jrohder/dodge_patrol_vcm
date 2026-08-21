@@ -4,6 +4,8 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WiFiClientSecure.h>
+#include <string.h>
+#include <esp_app_format.h>
 #include <esp_ota_ops.h>
 
 #include "config/config_registry.h"
@@ -16,14 +18,40 @@ namespace vcm {
 
 OtaService ota;
 
-void OtaService::begin() {
-  mutex_ = xSemaphoreCreateMutex();
-  // The app booted far enough to be considered healthy: cancel rollback so
-  // this image becomes the confirmed one.
+// ESP_APP_DESC_MAGIC_WORD at offset 0x20. Merged *-factory.bin images start
+// with a bootloader (also 0xE9) and fail this check, so Arduino Update must
+// not be allowed to "succeed" them into an OTA app slot.
+static bool looksLikeEspAppImage(const uint8_t* d, size_t n) {
+  if (n < 36 || d[0] != ESP_IMAGE_HEADER_MAGIC) return false;
+  uint32_t magic = 0;
+  memcpy(&magic, d + sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t),
+         sizeof(magic));
+  return magic == ESP_APP_DESC_MAGIC_WORD;
+}
+
+void OtaService::confirmRunningImage() {
   esp_ota_mark_app_valid_cancel_rollback();
+}
+
+void OtaService::begin() {
+  if (!mutex_) mutex_ = xSemaphoreCreateMutex();
   const esp_partition_t* running = esp_ota_get_running_partition();
   LOGI("OTA", "Firmware %s (%s) running from %s", VCM_FW_VERSION,
        VCM_GIT_COMMIT, running ? running->label : "?");
+}
+
+bool OtaService::inspectAppImage(const uint8_t* data, size_t len) {
+  if (appHdrChecked_) return true;
+  const size_t room = sizeof(appHdr_) - appHdrLen_;
+  const size_t n = len < room ? len : room;
+  memcpy(appHdr_ + appHdrLen_, data, n);
+  appHdrLen_ += n;
+  if (appHdrLen_ < sizeof(appHdr_)) return true;
+  appHdrChecked_ = true;
+  if (looksLikeEspAppImage(appHdr_, appHdrLen_)) return true;
+  setError("Not an OTA app image (use dodge_patrol_vcm-<ver>.bin, not *-factory.bin)");
+  Update.abort();
+  return false;
 }
 
 OtaStatus OtaService::status() const {
@@ -121,7 +149,8 @@ void OtaService::doCheck() {
   String assetUrl;
   for (JsonObject asset : rel["assets"].as<JsonArray>()) {
     const char* name = asset["name"] | "";
-    if (strstr(name, ".bin") && !strstr(name, "factory")) {
+    if (strstr(name, ".bin") && !strstr(name, "factory") &&
+        !strstr(name, "merged")) {
       assetUrl = (const char*)(asset["browser_download_url"] | "");
       break;
     }
@@ -198,6 +227,26 @@ void OtaService::doInstall() {
     leaveOtaState(false);
     return;
   }
+  WiFiClient* stream = http.getStreamPtr();
+  uint8_t first[64];
+  size_t firstLen = 0;
+  uint32_t waitStart = millis();
+  while (firstLen < 36 && millis() - waitStart < 15000) {
+    const size_t avail = stream->available();
+    if (avail) {
+      firstLen += stream->readBytes(first + firstLen,
+                                    min(avail, sizeof(first) - firstLen));
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(2));
+    }
+  }
+  if (!looksLikeEspAppImage(first, firstLen)) {
+    http.end();
+    setError("Not an OTA app image (use dodge_patrol_vcm-<ver>.bin, not *-factory.bin)");
+    leaveOtaState(false);
+    return;
+  }
+
   if (!Update.begin(total)) {
     http.end();
     setError("Not enough OTA space");
@@ -210,10 +259,17 @@ void OtaService::doInstall() {
   status_.totalBytes = total;
   xSemaphoreGive(mutex_);
 
-  WiFiClient* stream = http.getStreamPtr();
   uint8_t buf[2048];
   size_t written = 0;
   uint32_t lastData = millis();
+  if (Update.write(first, firstLen) != firstLen) {
+    http.end();
+    Update.abort();
+    setError("Update failed validation; keeping current firmware");
+    leaveOtaState(false);
+    return;
+  }
+  written = firstLen;
   while (written < (size_t)total) {
     const size_t avail = stream->available();
     if (avail) {
@@ -253,6 +309,9 @@ void OtaService::doInstall() {
 bool OtaService::uploadBegin(size_t totalSize) {
   if (busy()) return false;
   if (!enterOtaState()) return false;
+  appHdrLen_ = 0;
+  appHdrChecked_ = false;
+  memset(appHdr_, 0, sizeof(appHdr_));
   if (!Update.begin(totalSize ? totalSize : UPDATE_SIZE_UNKNOWN)) {
     setError("Not enough OTA space");
     leaveOtaState(false);
@@ -270,6 +329,7 @@ bool OtaService::uploadBegin(size_t totalSize) {
 }
 
 bool OtaService::uploadChunk(const uint8_t* data, size_t len) {
+  if (!inspectAppImage(data, len)) return false;
   if (Update.write(const_cast<uint8_t*>(data), len) != len) return false;
   xSemaphoreTake(mutex_, portMAX_DELAY);
   status_.doneBytes += len;

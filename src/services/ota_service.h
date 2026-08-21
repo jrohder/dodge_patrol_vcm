@@ -42,8 +42,12 @@ struct OtaStatus {
 
 class OtaService {
  public:
-  /// Mark the running image valid (cancels rollback) - call once after boot
-  /// when the system is healthy.
+  /// Cancel ESP-IDF app rollback. Must run before Serial/USB enumerates:
+  /// opening the CDC port toggles DTR and resets the chip, which otherwise
+  /// rolls the bootloader back to the previous OTA slot.
+  void confirmRunningImage();
+
+  /// Log the running partition. Call confirmRunningImage() first, at boot.
   void begin();
 
   /// Query GitHub Releases (async task). Result lands in status().
@@ -76,9 +80,13 @@ class OtaService {
   bool enterOtaState();
   void leaveOtaState(bool success);
   void setError(const char* msg);
+  bool inspectAppImage(const uint8_t* data, size_t len);
 
   mutable SemaphoreHandle_t mutex_ = nullptr;
   OtaStatus status_;
+  uint8_t appHdr_[36]{};
+  size_t appHdrLen_ = 0;
+  bool appHdrChecked_ = false;
 };
 
 extern OtaService ota;

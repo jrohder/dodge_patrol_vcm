@@ -32,6 +32,7 @@ class FirgelliFeedback {
 
  private:
   uint16_t raw_ = 0;
+  float stage1_ = 0.0f;
   float filtered_ = 0.0f;
   bool primed_ = false;
   uint8_t invalidCount_ = 0;

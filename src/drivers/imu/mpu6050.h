@@ -22,7 +22,8 @@ class Mpu6050 {
     bool invX = false, invY = false, invZ = false;
   };
 
-  bool begin();
+  bool begin();  ///< probes 0x68 and 0x69 (AD0 strap)
+  uint8_t address() const { return addr_; }
 
   /// Read and process one sample. Call at 100 Hz.
   /// @param orient mounting orientation from configuration
@@ -47,7 +48,9 @@ class Mpu6050 {
 
  private:
   bool readRegisters(int16_t out[7]);
+  bool probe(uint8_t addr);
 
+  uint8_t addr_ = 0x68;
   float rawAccel_[3] = {0, 0, 0}, rawGyro_[3] = {0, 0, 0};
   float accel_[3] = {0, 0, 0}, gyro_[3] = {0, 0, 0};
   float accelZero_[3] = {0, 0, 0}, gyroZero_[3] = {0, 0, 0};

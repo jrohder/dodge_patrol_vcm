@@ -28,8 +28,12 @@ safe) until the condition clears; **WARNING** faults are logged and shown.
 ## Common situations
 
 **Can't reach the dashboard**
-- AP mode: join `DodgePatrol-VCM` (password `dodgepatrol`), open
-  `http://192.168.4.1`.
+- AP mode: join **open** network `DodgePatrol-VCM` (no WiFi password), open
+  `http://192.168.4.1`, then enter the dashboard PIN once (default
+  `dodgepatrol`). Each phone/browser only needs the PIN the first time.
+- After a USB factory flash, NVS (saved WiFi/config) is erased, so the AP
+  password is the default again. If the Mac/phone says “incorrect
+  password”, Forget `DodgePatrol-VCM` and reconnect with `dodgepatrol`.
 - STA mode: try `http://dodge-patrol.local`. If the configured network is
   unreachable, the AP comes back automatically after ~20 s.
 - Last resort: USB serial monitor at 115200 shows the IP and full log.
@@ -57,6 +61,25 @@ safe) until the condition clears; **WARNING** faults are logged and shown.
 **Wheels turn the wrong way / steering reversed**
 - `steering.invert_output`, `steering.wheel_invert`,
   `rc.invert_steering/throttle` cover all combinations without rewiring.
+
+**OTA says successful, reboots, still the old version**
+- Arduino-ESP32 enables app rollback. The new image must call
+  `esp_ota_mark_app_valid_cancel_rollback()` *before* USB CDC enumerates.
+  If a host (serial monitor, esptool, the Mac) opens the port, DTR resets
+  the chip and the bootloader reverts to the previous OTA slot. Firmware
+  after this fix confirms the image at the very start of boot.
+- Do not upload `*-factory.bin` via the web UI. That file starts with a
+  bootloader, Arduino Update can still report success, then the new slot
+  does not run and rollback returns you to the old version. Use
+  `dodge_patrol_vcm-<ver>.bin` for OTA / web upload.
+
+**Can't USB-flash (Failed to connect / Device not configured)**
+- `ARDUINO_USB_CDC_ON_BOOT=1` makes opening the serial port reset the
+  chip, so the `/dev/cu.usbmodem*` node vanishes under esptool. Hold
+  **BOOT**, tap **RESET**, keep holding BOOT until esptool says
+  `Connecting...`. The device should enumerate as USB JTAG/serial debug,
+  not "ESP32-S3-DevKitC-1-N8". Then flash
+  `dodge_patrol_vcm-<ver>-factory.bin` at offset `0x0`.
 
 **OTA failed**
 - The previous firmware keeps running; the error is shown on the Firmware

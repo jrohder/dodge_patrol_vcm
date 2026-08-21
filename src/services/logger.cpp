@@ -33,9 +33,12 @@ void Logger::log(LogLevel level, const char* module, const char* fmt, ...) {
   vsnprintf(e.message, sizeof(e.message), fmt, args);
   va_end(args);
 
-  // Mirror to USB serial for low-level development
-  Serial.printf("%8lu [%-5s] %-7s %s\n", (unsigned long)e.ms,
-                levelName(level), e.module, e.message);
+  // USB CDC (Serial) and UART0 (Serial0 / DevKit TX-RX / USB-UART dongle)
+  char line[192];
+  snprintf(line, sizeof(line), "%8lu [%-5s] %-7s %s\n", (unsigned long)e.ms,
+           levelName(level), e.module, e.message);
+  Serial.print(line);
+  Serial0.print(line);
 
   if (!mutex_) return;  // before begin(): serial only
   if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(20)) != pdTRUE) return;

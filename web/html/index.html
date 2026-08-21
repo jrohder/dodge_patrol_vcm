@@ -9,6 +9,15 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+<div id="gate" class="gate">
+  <div class="gate-card">
+    <h2>Dodge Patrol</h2>
+    <p class="hint">Wi-Fi has no password. Enter the dashboard PIN once on this phone or computer. Default PIN: <b>dodgepatrol</b></p>
+    <input type="password" id="gate-pin" placeholder="Dashboard PIN" autocomplete="current-password" inputmode="text">
+    <button class="btn primary block" id="gate-go">Unlock this device</button>
+    <p class="banner err hidden" id="gate-err">Wrong PIN</p>
+  </div>
+</div>
 <header id="topbar">
   <div class="brand"><span class="logo">&#9679;</span> <span id="veh-name">Dodge Patrol</span> <span class="sub">VCM</span></div>
   <div class="statusgrp">
@@ -442,7 +451,7 @@
   </div>
   <pre id="fw-notes" class="notes hidden"></pre>
   <h3>Manual Upload</h3>
-  <p class="hint">Upload a firmware .bin built for this board. The vehicle stops and outputs are disabled during the update; a failed image is discarded and the current firmware keeps running.</p>
+  <p class="hint">Upload the OTA image <code>dodge_patrol_vcm-&lt;ver&gt;.bin</code> — not the larger <code>*-factory.bin</code> (that one is only for USB flash at offset 0x0). The vehicle stops during the update; a failed image is discarded.</p>
   <label class="btn ghost">Choose .bin<input type="file" id="fw-file" accept=".bin" hidden></label>
   <span id="fw-fname" class="hint"></span>
   <button class="btn primary" id="fw-upload" disabled>Upload &amp; Flash</button>

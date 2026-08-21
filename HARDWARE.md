@@ -27,6 +27,17 @@ firmware (`src/core/pins.h`); everything behavioral is configuration.
 
 All motor PWM runs at 20 kHz / 10-bit via LEDC channels 0–5.
 
+Rear drive BTS7960 / IBT-2 stop modes (see `drive.brake_mode`):
+
+| RPWM | LPWM | Result |
+| --- | --- | --- |
+| PWM | low | forward |
+| low | PWM | reverse |
+| low | low | coast (high-Z) |
+| high | high | brake (motor shorted) |
+
+Steering uses the same chips but always coasts at zero command (never both-high).
+
 ## Nano UART wiring (ESP32-S3-DevKitC-1)
 
 Do **not** use the header pins labelled TX / RX (GPIO 43 / 44). On this
