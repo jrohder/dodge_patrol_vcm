@@ -10,9 +10,11 @@
  *   system         1 Hz  core 0  diagnostics, WiFi, commissioning table, button
  *
  * Boot order (vehicle controller, not a bench sketch):
- *   GPIOs/motors OFF → safety → Nano/RC UART → control tasks
- *   → Wi-Fi AP → web server → background I²C/OTA
+ *   GPIOs/motors OFF → safety → Nano/RC UART → OTA mutex → control tasks
+ *   → Wi-Fi AP → web server → background I²C
  * RC never waits for Wi-Fi. Wi-Fi never waits for I²C.
+ * Control tasks call ota.busy() every cycle, so the OTA mutex must exist
+ * before they are created.
  */
 #include <Arduino.h>
 #include <cmath>
@@ -390,6 +392,12 @@ static void bootstrap() {
   dynamics.begin();
   bootReport.mark("nano UART", bootReport.report().tNanoMs);
 
+  // steer_motor calls ota.busy() on its first 5 ms cycle. Creating that
+  // high-priority task before the OTA mutex exists panics:
+  //   assert failed: xQueueSemaphoreTake queue.c (( pxQueue ))
+  // and the chip reboot-loops — the "several minutes to boot" symptom.
+  ota.begin();
+
   xTaskCreatePinnedToCore(steerMotorTask, "steer_motor", 8192, nullptr, 5,
                           nullptr, 1);
   xTaskCreatePinnedToCore(dynamicsTask, "dynamics", 8192, nullptr, 4, nullptr,
@@ -408,8 +416,6 @@ static void bootstrap() {
 
   i2cBus.begin();
   bootReport.mark("i2c bus (no scan)", bootReport.report().tI2cMs);
-
-  ota.begin();
 
   xTaskCreatePinnedToCore(sensorTask, "sensors", 6144, nullptr, 3, nullptr, 0);
   xTaskCreatePinnedToCore(telemetryTask, "telemetry", 8192, nullptr, 2,

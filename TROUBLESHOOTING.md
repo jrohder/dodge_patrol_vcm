@@ -28,10 +28,13 @@ safe) until the condition clears; **WARNING** faults are logged and shown.
 ## Common situations
 
 **Takes minutes before RC or the AP works**
-- That is not a normal boot. 1.4.0 starts motors-off, Nano/RC, then control
-  tasks, then the AP — I²C is background. If it still takes minutes, the
-  serial log is the first thing to capture. Look for `reset=`, `BROWNOUT`,
-  `PANIC`, `WDT`, `boot#` climbing (reboot loop), and `BOOT +Nms` timings.
+- That is not a normal boot. 1.5.0 starts motors-off, Nano/RC, OTA mutex,
+  control tasks, then the AP — I²C is background. Ready should be a few
+  hundred milliseconds, not minutes.
+- 1.4.0 reboot-looped on `xQueueSemaphoreTake` right after `nano UART`
+  (control task called `ota.busy()` before the mutex existed). Flash 1.5.0.
+- If it still takes minutes, capture the serial log. Look for `reset=`,
+  `BROWNOUT`, `PANIC`, `WDT`, `boot#` climbing, and `BOOT +Nms` timings.
 - A brownout on the 5 V / 3.3 V rail when BTS7960s or Wi-Fi come up will look
   like “it finally starts working” after several crash/reboot cycles.
 - Diagnostics → ESP reset / boot shows the last reset reason, boot count, and
