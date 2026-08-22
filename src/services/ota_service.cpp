@@ -55,6 +55,7 @@ bool OtaService::inspectAppImage(const uint8_t* data, size_t len) {
 }
 
 OtaStatus OtaService::status() const {
+  if (!mutex_) return status_;
   xSemaphoreTake(mutex_, portMAX_DELAY);
   OtaStatus copy = status_;
   xSemaphoreGive(mutex_);
@@ -62,12 +63,14 @@ OtaStatus OtaService::status() const {
 }
 
 bool OtaService::busy() const {
+  if (!mutex_) return false;
   const OtaState s = status().state;
   return s == OtaState::CHECKING || s == OtaState::DOWNLOADING ||
          s == OtaState::FLASHING;
 }
 
 void OtaService::setError(const char* msg) {
+  if (!mutex_) return;
   xSemaphoreTake(mutex_, portMAX_DELAY);
   status_.state = OtaState::FAILED;
   strncpy(status_.error, msg, sizeof(status_.error) - 1);

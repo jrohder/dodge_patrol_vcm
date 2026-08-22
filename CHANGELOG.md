@@ -3,6 +3,15 @@
 All notable changes to the Dodge Patrol VCM firmware.
 Format: [Keep a Changelog](https://keepachangelog.com), versioning: semver.
 
+## [1.5.0] - 2026-08-22
+
+### Fixed
+- Panic reboot loop on every boot after `nano UART`: 1.4.0 started the 200 Hz
+  steering task before `ota.begin()`, so `ota.busy()` took a null FreeRTOS
+  mutex (`xQueueSemaphoreTake` assert) and the chip never reached Wi-Fi.
+  A power-on looked like a several-minute hang. The OTA mutex is created
+  before control tasks; `busy()`/`status()` also tolerate a missing mutex.
+
 ## [1.4.0] - 2026-08-22
 
 Boot is no longer a single blocking chain. RC/steering start before Wi-Fi,
