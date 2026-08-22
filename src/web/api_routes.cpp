@@ -7,10 +7,15 @@
 #include "config/config_registry.h"
 #include "control/vehicle_dynamics.h"
 #include "core/version.h"
+#include "drivers/i2c/i2c_bus.h"
+#include "drivers/imu/mpu6050.h"
+#include "drivers/ina3221/ina3221.h"
 #include "drivers/uart/nano_link.h"
 #include "drivers/wifi/wifi_manager.h"
 #include "proto/protocol.h"
+#include "services/boot_report.h"
 #include "services/calibration.h"
+#include "services/commissioning.h"
 #include "services/diagnostics.h"
 #include "services/event_recorder.h"
 #include "services/logger.h"
@@ -69,12 +74,41 @@ void VcmWebServer::setupApi() {
     doc["partition"] = part ? part->label : "?";
     doc["uptime_s"] = diagnostics.uptimeS();
     doc["heap"] = ESP.getFreeHeap();
+    doc["min_heap"] = ESP.getMinFreeHeap();
+    doc["largest_heap"] = ESP.getMaxAllocHeap();
+    doc["psram"] = ESP.getFreePsram();
+    doc["psram_size"] = ESP.getPsramSize();
     doc["state"] = vehicleStateName(safety.state());
     doc["commissioned"] = calibration.commissioned();
     doc["ip"] = wifiManager.ipAddress();
     doc["ap_active"] = wifiManager.apActive();
     doc["hostname"] = config.s(S_HOSTNAME);
     doc["vehicle_name"] = config.s(S_VEHICLE_NAME);
+    const BootReport& br = bootReport.report();
+    doc["reset_reason"] = br.resetName;
+    doc["reset_code"] = br.resetReason;
+    doc["reset_cpu0"] = br.resetReasonCpu0;
+    doc["brownout"] = br.brownout;
+    doc["panic"] = br.panic;
+    doc["watchdog"] = br.watchdog;
+    doc["boot_count"] = br.bootCount;
+    doc["boot_gpio_ms"] = br.tGpioMs;
+    doc["boot_nano_ms"] = br.tNanoMs;
+    doc["boot_control_ms"] = br.tControlMs;
+    doc["boot_wifi_ms"] = br.tWifiMs;
+    doc["boot_web_ms"] = br.tWebMs;
+    doc["boot_i2c_ms"] = br.tI2cMs;
+    doc["boot_ready_ms"] = br.tReadyMs;
+    const WifiStats wst = wifiManager.stats();
+    doc["ap_uptime_s"] = wifiManager.apUptimeS();
+    doc["ap_assoc"] = wst.assocCount;
+    doc["ap_disc"] = wst.disconnectCount;
+    doc["ap_dhcp_ok"] = wst.dhcpAssignCount;
+    doc["ap_dhcp_fail"] = wst.dhcpFailCount;
+    doc["ap_stop"] = wst.apStopCount;
+    doc["wifi_reset"] = wst.wifiResetCount;
+    doc["wifi_rssi"] = wifiManager.rssi();
+    doc["wifi_clients"] = wifiManager.clientCount();
     sendJson(req, doc);
   });
 
@@ -378,6 +412,96 @@ void VcmWebServer::setupApi() {
   server_.on("/api/trip/reset", HTTP_POST, [](AsyncWebServerRequest* req) {
     dynamics.resetTrip();
     sendOk(req, true);
+  });
+
+  // ---------------------------------------------------------------- I2C / commissioning
+  server_.on("/api/i2c", HTTP_GET, [](AsyncWebServerRequest* req) {
+    JsonDocument doc;
+    const I2cBusStats st = i2cBus.stats();
+    const I2cScanResult scan = i2cBus.lastScan();
+    doc["sda"] = i2cBus.sdaPin();
+    doc["scl"] = i2cBus.sclPin();
+    doc["freq_hz"] = i2cBus.freqHz();
+    doc["bus_state"] = i2cBus.busStateName();
+    doc["sda_high"] = i2cBus.sdaHigh();
+    doc["scl_high"] = i2cBus.sclHigh();
+    doc["last_txn"] = st.lastTxn;
+    doc["last_txn_ok"] = st.lastTxnOk;
+    doc["last_txn_ms"] = st.lastTxnMs;
+    doc["errors"] = st.errors;
+    doc["timeouts"] = st.timeouts;
+    doc["recoveries"] = st.recoveries;
+    doc["scans"] = st.scans;
+    doc["scan_pending"] = i2cBus.scanRequested();
+    doc["scan_in_progress"] = scan.inProgress;
+    doc["scan_ms"] = scan.durationMs;
+    JsonArray found = doc["found"].to<JsonArray>();
+    if (scan.valid) {
+      for (uint8_t i = 0; i < scan.count && i < 16; ++i) {
+        JsonObject o = found.add<JsonObject>();
+        o["addr"] = scan.addrs[i];
+        o["hex"] = String("0x") + String(scan.addrs[i], HEX);
+        o["name"] = I2cBus::nameForAddr(scan.addrs[i]);
+      }
+    }
+    JsonObject inaO = doc["ina"].to<JsonObject>();
+    inaO["addr"] = ina.address();
+    inaO["state"] = i2cDevStateName(i2cBus.inaFsm().state());
+    inaO["health"] = sensorHealthName(ina.health());
+    inaO["manuf"] = ina.manufId();
+    JsonObject imuO = doc["imu"].to<JsonObject>();
+    imuO["addr"] = imu.address();
+    imuO["state"] = i2cDevStateName(i2cBus.imuFsm().state());
+    imuO["health"] = sensorHealthName(imu.health());
+    imuO["whoami"] = imu.whoAmI();
+    sendJson(req, doc);
+  });
+
+  server_.on("/api/i2c/scan", HTTP_POST, [](AsyncWebServerRequest* req) {
+    i2cBus.requestScan();
+    sendOk(req, true);
+  });
+  server_.on("/api/i2c/recover", HTTP_POST, [](AsyncWebServerRequest* req) {
+    i2cBus.requestRecover();
+    sendOk(req, true);
+  });
+
+  server_.on("/api/commissioning", HTTP_GET, [](AsyncWebServerRequest* req) {
+    refreshCommissioning(commissioning);
+    const CommissioningReport& c = commissioning;
+    JsonDocument doc;
+    doc["firmware"] = c.firmware;
+    doc["overall"] = c.overall;
+    doc["ip"] = c.ip;
+    doc["heap"] = c.freeHeap;
+    auto add = [&](JsonArray arr, const char* name, SubsystemStatus s) {
+      JsonObject o = arr.add<JsonObject>();
+      o["name"] = name;
+      o["status"] = subsystemStatusName(s);
+    };
+    JsonArray core = doc["core"].to<JsonArray>();
+    add(core, "ESP32-S3", c.esp);
+    add(core, "Heap", c.heap);
+    add(core, "PSRAM", c.psramStatus);
+    add(core, "Safety", c.safety);
+    JsonArray ctl = doc["control"].to<JsonArray>();
+    add(ctl, "RC receiver", c.rc);
+    add(ctl, "Nano link", c.nano);
+    add(ctl, "Steering feedback", c.steerFb);
+    add(ctl, "Steering actuator", c.steerAct);
+    add(ctl, "Left motor", c.leftMot);
+    add(ctl, "Right motor", c.rightMot);
+    JsonArray sns = doc["sensors"].to<JsonArray>();
+    add(sns, "INA3221", c.ina);
+    add(sns, "MPU6050", c.imu);
+    add(sns, "Left speed", c.leftSpeed);
+    add(sns, "Right speed", c.rightSpeed);
+    add(sns, "Steering wheel", c.wheel);
+    add(sns, "Pedal", c.pedal);
+    JsonArray net = doc["network"].to<JsonArray>();
+    add(net, "Wi-Fi AP", c.wifi);
+    add(net, "Web server", c.web);
+    sendJson(req, doc);
   });
 }
 

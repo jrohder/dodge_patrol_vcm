@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 6,
   "params": {
     "vehicle.wheel_diameter": 0.254,
     "vehicle.wheelbase": 0.6096,
@@ -121,7 +121,10 @@
     "control.pedal_sense_threshold": 512,
     "ui.units": 0,
     "web.telemetry_rate": 10,
-    "ota.auto_check": 1,
+    "hw.wheel_speed_installed": 0,
+    "hw.manual_steering_installed": 0,
+    "hw.pedal_installed": 0,
+    "ota.auto_check": 0,
     "ota.allow_prerelease": 0,
     "log.level": 2,
     "wifi.mode": 0

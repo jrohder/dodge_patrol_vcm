@@ -23,10 +23,11 @@ Adding a parameter is one line in `params.def`.
 | **REVERT** | Reload the last saved values. |
 | **Factory reset** | Restore defaults (double confirmation; calibration data is kept separately). Also: hold the boot button 10 s. |
 
-Configuration is versioned (`schema_version`, currently **3**); on boot an older stored
-schema is migrated where compatible. New steering diagnostic parameters keep
-factory defaults until APPLY/SAVE (feed-forward stays off; scheduled P gains
-of 0 inherit `steering.pid_kp`).
+Configuration is versioned (`schema_version`, currently **6**); on boot an older stored
+schema is migrated where compatible. Schema v6 turns **`ota.auto_check` off**
+(GitHub is not polled from a kids' vehicle unless you enable it). New
+`hw.*` install flags default to not-installed for wheel speed, manual
+steering wheel, and pedal.
 
 ## Backup / restore
 
@@ -49,8 +50,9 @@ of 0 inherit `steering.pid_kp`).
 | `imu` | axis source mapping, inversions, filter |
 | `rc` | channel assignment, pulse endpoints, deadband, inversion |
 | `control` | source enables, RC override threshold/hold, manual throttle level, pedal sense threshold |
+| `hw` | Optional hardware present: wheel speed sensors, manual steering wheel (P3022), pedal. Default **off** — reported as NOT INSTALLED, not as a fault. |
 | `web` | telemetry rate |
-| `ota` | auto-check, pre-releases, GitHub repository |
+| `ota` | auto-check (**default off**), pre-releases, GitHub repository |
 | `log` | runtime log level |
 | `wifi` | mode (AP/STA/AP_STA), SSIDs, passwords, hostname |
 

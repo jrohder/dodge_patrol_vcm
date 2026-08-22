@@ -20,7 +20,9 @@ namespace pins {
 constexpr int NANO_TX = 1;  ///< ESP32 TX -> Nano D0 (RX1)
 constexpr int NANO_RX = 2;  ///< ESP32 RX <- Nano D1 (TX1) via divider
 
-// I2C sensor bus (INA3221 current monitor, MPU6050 IMU) @ 400 kHz
+// I2C sensor bus (INA3221 current monitor, MPU6050 IMU).
+// Hardware is specified at 400 kHz; firmware stays at 100 kHz until both
+// devices ACK reliably, then we can raise the clock.
 constexpr int I2C_SDA = 9;
 constexpr int I2C_SCL = 10;
 

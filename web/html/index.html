@@ -54,6 +54,8 @@
     <div class="card"><label>Trip</label><b><span id="d-trip">0</span> <span data-u="dist">mi</span></b></div>
     <div class="card"><label>Uptime</label><b id="d-up">0s</b></div>
   </div>
+  <h3>Commissioning</h3>
+  <table class="tbl comm-tbl" id="dash-comm"><tbody></tbody></table>
   <button class="btn danger block" id="btn-estop">EMERGENCY STOP</button>
   <button class="btn ghost block hidden" id="btn-estop-clear">Clear Emergency Stop</button>
 </section>
@@ -343,6 +345,57 @@
   <h3>Faults <button class="btn sm ghost right" id="flt-clear">Clear History</button></h3>
   <table class="tbl" id="flt-tbl"><thead><tr><th>Code</th><th>Description</th><th>Sev</th><th>Active</th><th>Count</th></tr></thead><tbody></tbody></table>
 
+  <h3>Commissioning</h3>
+  <table class="tbl comm-tbl" id="diag-comm"><tbody></tbody></table>
+
+  <h3>I²C bus</h3>
+  <p class="hint">SDA GPIO9 / SCL GPIO10 at 100 kHz. Boot does not scan the bus. Use the button only when debugging sensors.</p>
+  <div class="grid small">
+    <div class="card"><label>Bus</label><b id="i2c-state">--</b></div>
+    <div class="card"><label>SDA</label><b id="i2c-sda">--</b></div>
+    <div class="card"><label>SCL</label><b id="i2c-scl">--</b></div>
+    <div class="card"><label>Last txn</label><b id="i2c-txn" class="tiny">--</b></div>
+    <div class="card"><label>Errors</label><b id="i2c-err">--</b></div>
+    <div class="card"><label>Timeouts</label><b id="i2c-to">--</b></div>
+    <div class="card"><label>Recoveries</label><b id="i2c-rec">--</b></div>
+    <div class="card"><label>INA3221</label><b id="i2c-ina">--</b></div>
+    <div class="card"><label>MPU6050</label><b id="i2c-imu">--</b></div>
+    <div class="card"><label>WHO_AM_I</label><b id="i2c-who">--</b></div>
+  </div>
+  <div class="row wrap">
+    <button class="btn" id="i2c-scan">Scan I²C Bus</button>
+    <button class="btn ghost" id="i2c-recover">Recover Bus</button>
+  </div>
+  <table class="tbl" id="i2c-found"><thead><tr><th>Addr</th><th>Device</th></tr></thead><tbody></tbody></table>
+
+  <h3>Wi-Fi AP</h3>
+  <div class="grid small">
+    <div class="card"><label>AP uptime</label><b id="wf-up">--</b></div>
+    <div class="card"><label>Clients</label><b id="wf-cli">--</b></div>
+    <div class="card"><label>Assoc</label><b id="wf-assoc">--</b></div>
+    <div class="card"><label>Disconnects</label><b id="wf-disc">--</b></div>
+    <div class="card"><label>DHCP OK</label><b id="wf-dhcp">--</b></div>
+    <div class="card"><label>DHCP fail</label><b id="wf-dhcpf">--</b></div>
+    <div class="card"><label>AP stops</label><b id="wf-stop">--</b></div>
+    <div class="card"><label>Wi-Fi resets</label><b id="wf-rst">--</b></div>
+    <div class="card"><label>RSSI</label><b id="wf-rssi">--</b></div>
+    <div class="card"><label>Heap</label><b id="wf-heap">--</b></div>
+    <div class="card"><label>Min heap</label><b id="wf-minh">--</b></div>
+    <div class="card"><label>PSRAM</label><b id="wf-psram">--</b></div>
+  </div>
+
+  <h3>ESP reset / boot</h3>
+  <div class="grid small">
+    <div class="card"><label>Reset</label><b id="bt-rst">--</b></div>
+    <div class="card"><label>Boot #</label><b id="bt-n">--</b></div>
+    <div class="card"><label>Brownout</label><b id="bt-bo">--</b></div>
+    <div class="card"><label>Watchdog</label><b id="bt-wd">--</b></div>
+    <div class="card"><label>Control</label><b id="bt-ctl" class="tiny">--</b></div>
+    <div class="card"><label>Wi-Fi</label><b id="bt-wifi" class="tiny">--</b></div>
+    <div class="card"><label>Web</label><b id="bt-web" class="tiny">--</b></div>
+    <div class="card"><label>Ready</label><b id="bt-rdy" class="tiny">--</b></div>
+  </div>
+
   <h3>Steering loop</h3>
   <p class="hint"><a href="#" id="diag-open-steer">Open Steering Diagnostics</a> for the 60-second 200 Hz graph. This page keeps the generic vehicle overview; the event recorder below is the 30-second pre-fault log and is separate.</p>
   <div class="grid small">
@@ -404,6 +457,7 @@
     <div class="card"><label>CPU</label><b><span id="g-cpu">--</span> %</b></div>
     <div class="card"><label>Heap</label><b id="g-heap">--</b></div>
     <div class="card"><label>Min heap</label><b id="g-minheap">--</b></div>
+    <div class="card"><label>PSRAM</label><b id="g-psram">--</b></div>
     <div class="card"><label>Dyn task</label><b id="g-dyn" class="tiny">--</b></div>
     <div class="card"><label>Steer task</label><b id="g-str" class="tiny">--</b></div>
     <div class="card"><label>WiFi RSSI</label><b id="g-rssi">--</b></div>

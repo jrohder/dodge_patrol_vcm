@@ -14,6 +14,8 @@ document.querySelectorAll("#tabbar button").forEach((btn) => {
     if (btn.dataset.page === "config" && !cfgLoaded) loadConfig();
     if (btn.dataset.page === "fw") refreshOta();
     if (btn.dataset.page === "sys") loadSystem();
+    if (btn.dataset.page === "diag" || btn.dataset.page === "dash") refreshCommissioning();
+    if (btn.dataset.page === "diag") { refreshI2c(); refreshWifiBoot(); }
     if (typeof SDiag !== "undefined") SDiag.onPage(btn.dataset.page === "steer");
     if (btn.dataset.page === "cal" && typeof SChar !== "undefined") SChar.loadHistory();
   });
@@ -186,6 +188,7 @@ function onTelemetry(m) {
   T("g-cpu", sys.cpu);
   T("g-heap", (sys.heap / 1024).toFixed(0) + " kB");
   T("g-minheap", (sys.minheap / 1024).toFixed(0) + " kB");
+  if (sys.psram != null) T("g-psram", (sys.psram / 1024).toFixed(0) + " kB");
   T("g-dyn", `${sys.dyn_avg}us avg, ${sys.dyn_max}us max, ${sys.dyn_miss} miss`);
   T("g-str", `${sys.str_avg}us avg, ${sys.str_max}us max, ${sys.str_miss} miss`);
   T("g-rssi", sys.rssi + " dBm");
@@ -440,6 +443,92 @@ $("cal-commission").onclick = async () => {
 $("cal-decommission").onclick = () => post("/api/cal/commission", { done: false });
 
 /* ---------------------------------------------------------- diagnostics */
+function statusClass(s) {
+  if (s === "OK") return "st-ok";
+  if (s === "OFFLINE" || s === "FAULT") return "st-off";
+  if (s === "NOT INSTALLED") return "st-ni";
+  return "st-wait";
+}
+function commRows(groups) {
+  let html = "";
+  for (const [title, items] of groups) {
+    html += `<tr><td colspan="2"><b>${title}</b></td></tr>`;
+    for (const it of items || []) {
+      html += `<tr><td>${it.name}</td><td class="${statusClass(it.status)}">${it.status}</td></tr>`;
+    }
+  }
+  return html;
+}
+async function refreshCommissioning() {
+  const c = await api("/api/commissioning");
+  const groups = [
+    ["CORE", c.core],
+    ["CONTROL", c.control],
+    ["SENSORS", c.sensors],
+    ["NETWORK", c.network],
+    ["STATUS", [{ name: "Vehicle", status: c.overall || "--" }]],
+  ];
+  const html = commRows(groups);
+  const dash = $("dash-comm");
+  const diag = $("diag-comm");
+  if (dash) dash.innerHTML = html;
+  if (diag) diag.innerHTML = html;
+}
+setInterval(() => {
+  if ($("page-dash").classList.contains("active") ||
+      $("page-diag").classList.contains("active"))
+    refreshCommissioning();
+}, 2000);
+
+async function refreshI2c() {
+  if (!$("page-diag").classList.contains("active")) return;
+  const d = await api("/api/i2c");
+  T("i2c-state", d.bus_state);
+  T("i2c-sda", d.sda_high ? "HIGH" : "LOW");
+  T("i2c-scl", d.scl_high ? "HIGH" : "LOW");
+  T("i2c-txn", (d.last_txn || "--") + (d.last_txn_ok === false ? " FAIL" : ""));
+  T("i2c-err", d.errors);
+  T("i2c-to", d.timeouts);
+  T("i2c-rec", d.recoveries);
+  T("i2c-ina", `${d.ina?.state || "--"} 0x${(d.ina?.addr || 0).toString(16)}`);
+  T("i2c-imu", `${d.imu?.state || "--"} 0x${(d.imu?.addr || 0).toString(16)}`);
+  T("i2c-who", d.imu?.whoami != null ? ("0x" + Number(d.imu.whoami).toString(16)) : "--");
+  const tb = $("i2c-found").querySelector("tbody");
+  const found = d.found || [];
+  tb.innerHTML = found.length
+    ? found.map((x) => `<tr><td>${x.hex}</td><td>${x.name}</td></tr>`).join("")
+    : `<tr><td colspan="2" class="hint">${d.scan_pending || d.scan_in_progress ? "Scanning…" : "No scan yet"}</td></tr>`;
+}
+setInterval(refreshI2c, 1500);
+$("i2c-scan").onclick = async () => { await post("/api/i2c/scan"); refreshI2c(); };
+$("i2c-recover").onclick = async () => { await post("/api/i2c/recover"); refreshI2c(); };
+
+async function refreshWifiBoot() {
+  if (!$("page-diag").classList.contains("active")) return;
+  const s = await api("/api/system");
+  T("wf-up", s.ap_uptime_s != null ? fmtUptime(s.ap_uptime_s) : "--");
+  T("wf-cli", s.wifi_clients);
+  T("wf-assoc", s.ap_assoc);
+  T("wf-disc", s.ap_disc);
+  T("wf-dhcp", s.ap_dhcp_ok);
+  T("wf-dhcpf", s.ap_dhcp_fail);
+  T("wf-stop", s.ap_stop);
+  T("wf-rst", s.wifi_reset);
+  T("wf-rssi", (s.wifi_rssi || 0) + " dBm");
+  T("wf-heap", (s.heap / 1024).toFixed(0) + " kB");
+  T("wf-minh", ((s.min_heap || 0) / 1024).toFixed(0) + " kB");
+  T("wf-psram", ((s.psram || 0) / 1024).toFixed(0) + " kB");
+  T("bt-rst", s.reset_reason || "--");
+  T("bt-n", s.boot_count);
+  T("bt-bo", s.brownout ? "YES" : "no");
+  T("bt-wd", s.watchdog ? "YES" : "no");
+  T("bt-ctl", s.boot_control_ms + " ms");
+  T("bt-wifi", s.boot_wifi_ms + " ms");
+  T("bt-web", s.boot_web_ms + " ms");
+  T("bt-rdy", s.boot_ready_ms + " ms");
+}
+setInterval(refreshWifiBoot, 2000);
+
 async function refreshFaults() {
   if (!$("page-diag").classList.contains("active")) return;
   const d = await api("/api/faults");
@@ -547,9 +636,23 @@ async function loadSystem() {
     "Display units": s.units || Units.name(),
     "Flash": (s.flash_kb / 1024).toFixed(0) + " MB",
     "Sketch": s.sketch_kb + " kB", "Boot partition": s.partition,
-    "Uptime": fmtUptime(s.uptime_s), "Free heap": (s.heap / 1024).toFixed(0) + " kB",
+    "Uptime": fmtUptime(s.uptime_s),
+    "Free heap": (s.heap / 1024).toFixed(0) + " kB",
+    "Min heap": ((s.min_heap || 0) / 1024).toFixed(0) + " kB",
+    "Largest block": ((s.largest_heap || 0) / 1024).toFixed(0) + " kB",
+    "PSRAM free": ((s.psram || 0) / 1024).toFixed(0) + " kB",
+    "Reset reason": s.reset_reason || "--",
+    "Boot count": s.boot_count,
+    "Brownout": s.brownout ? "yes" : "no",
+    "Control tasks": (s.boot_control_ms || 0) + " ms",
+    "Wi-Fi AP": (s.boot_wifi_ms || 0) + " ms",
+    "Web server": (s.boot_web_ms || 0) + " ms",
+    "Ready": (s.boot_ready_ms || 0) + " ms",
     "State": s.state, "Commissioned": s.commissioned ? "yes" : "no",
     "IP address": s.ip, "AP active": s.ap_active ? "yes" : "no",
+    "AP uptime": s.ap_uptime_s != null ? fmtUptime(s.ap_uptime_s) : "--",
+    "AP assoc / leave": (s.ap_assoc || 0) + " / " + (s.ap_disc || 0),
+    "DHCP ok / fail": (s.ap_dhcp_ok || 0) + " / " + (s.ap_dhcp_fail || 0),
     "Hostname": s.hostname + ".local",
   };
   $("sys-tbl").querySelector("tbody").innerHTML = Object.entries(rows)

@@ -6,6 +6,8 @@
 
 namespace vcm {
 
+Ina3221 ina;
+
 static constexpr uint8_t REG_CONFIG = 0x00;
 static constexpr uint8_t REG_SHUNT_V_1 = 0x01;
 static constexpr uint8_t REG_MANUF_ID = 0xFE;
@@ -21,7 +23,9 @@ bool Ina3221::readReg(uint8_t addr, uint8_t reg, uint16_t& value) {
 
 bool Ina3221::probe(uint8_t addr) {
   uint16_t id = 0;
-  return readReg(addr, REG_MANUF_ID, id) && id == 0x5449;  // 'TI'
+  if (!readReg(addr, REG_MANUF_ID, id)) return false;
+  manufId_ = id;
+  return id == 0x5449;  // 'TI'
 }
 
 bool Ina3221::begin() {
@@ -38,9 +42,12 @@ bool Ina3221::begin() {
     LOGI("INA", "INA3221 online at 0x%02X", addr_);
     return true;
   }
-  health_ = SensorHealth::NOT_PRESENT;
-  LOGW("INA", "INA3221 not detected at 0x40-0x43");
-  return false;
+    health_ = SensorHealth::NOT_PRESENT;
+    if (!loggedMissing_) {
+      loggedMissing_ = true;
+      LOGW("INA", "INA3221 not detected at 0x40-0x43 (retrying in background)");
+    }
+    return false;
 }
 
 bool Ina3221::sample(float shuntMilliOhm, float offsetA, float scale) {

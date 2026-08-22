@@ -20,12 +20,40 @@ safe) until the condition clears; **WARNING** faults are logged and shown.
 | DRV-001/002 | TRIP | Left/right motor overcurrent | Obstruction, stall or `current.drive_trip` too low. |
 | PWR-001 | TRIP | Battery under-voltage cutoff | Charge the battery. Clears with 0.5 V hysteresis. |
 | PWR-002 | WARNING | Battery voltage low | Charge soon. |
-| SNS-001 | WARNING | IMU failure | I2C wiring (GPIO9/10), MPU6050 at 0x68. |
-| SNS-002 | WARNING | Current monitor failure | INA3221 at 0x40. |
+| SNS-001 | WARNING | IMU failure | Only after the MPU6050 was online then dropped. I2C GPIO9/10, 0x68. Not present at boot is OFFLINE, not this fault. |
+| SNS-002 | WARNING | Current monitor failure | Only after the INA3221 was online then dropped. 0x40. Missing chip does not trip the vehicle. |
 | SYS-001 | WARNING | Control task overrun | Check task timing on the Diagnostics page. |
 | SYS-002 | WARNING | Low free heap | Reduce telemetry rate; report if persistent. |
 
 ## Common situations
+
+**Takes minutes before RC or the AP works**
+- That is not a normal boot. 1.4.0 starts motors-off, Nano/RC, then control
+  tasks, then the AP — I²C is background. If it still takes minutes, the
+  serial log is the first thing to capture. Look for `reset=`, `BROWNOUT`,
+  `PANIC`, `WDT`, `boot#` climbing (reboot loop), and `BOOT +Nms` timings.
+- A brownout on the 5 V / 3.3 V rail when BTS7960s or Wi-Fi come up will look
+  like “it finally starts working” after several crash/reboot cycles.
+- Diagnostics → ESP reset / boot shows the last reset reason, boot count, and
+  milliseconds to control / Wi-Fi / web / ready.
+
+**INA3221 or MPU6050 not communicating**
+- Open Diagnostics → I²C bus. SDA should be GPIO9, SCL GPIO10, 100 kHz.
+  Press **Scan I²C Bus** (never done automatically at boot).
+- Need `0x40` (INA3221) and `0x68` (MPU6050, or `0x69` if AD0 is high).
+  If neither ACKs, it is wiring/power, not the driver: SDA/SCL swap, no 3.3 V,
+  no common ground, missing pull-ups, bus held low. **Recover Bus** bit-bangs
+  SCL if a device is sitting on the lines.
+- Current-sensor **power** wiring is separate: the INA3221 is high-side on
+  each BTS7960 **supply**, not in the PWM motor leads. See HARDWARE.md.
+- Missing INA/IMU is **OFFLINE**, not a trip. Steering and RC still run.
+
+**Wi-Fi associates then drops / no IP**
+- Join open `DodgePatrol-VCM`, then `http://192.168.4.1`. Diagnostics → Wi-Fi
+  AP shows assoc vs leave vs DHCP fail vs min heap. If min heap is tiny or
+  boot count climbs, it is power or memory, not the password.
+- AP country is US, HT20, power-save off. The radio is not restarted in a loop
+  once the AP is up.
 
 **Can't reach the dashboard**
 - AP mode: join **open** network `DodgePatrol-VCM` (no WiFi password), open

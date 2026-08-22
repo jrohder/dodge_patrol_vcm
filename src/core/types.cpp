@@ -38,3 +38,14 @@ const char* sensorHealthName(SensorHealth h) {
   }
   return "?";
 }
+
+const char* subsystemStatusName(SubsystemStatus s) {
+  switch (s) {
+    case SubsystemStatus::OK: return "OK";
+    case SubsystemStatus::OFFLINE: return "OFFLINE";
+    case SubsystemStatus::NOT_INSTALLED: return "NOT INSTALLED";
+    case SubsystemStatus::FAULT: return "FAULT";
+    case SubsystemStatus::WAITING: return "WAITING";
+  }
+  return "?";
+}

@@ -18,6 +18,7 @@ class Ina3221 {
  public:
   bool begin();  ///< probes 0x40–0x43 (A0 strap)
   uint8_t address() const { return addr_; }
+  uint16_t manufId() const { return manufId_; }
 
   /// Read all channels. Call at 100 Hz.
   /// @param shuntMilliOhm shunt resistor value (config)
@@ -33,10 +34,14 @@ class Ina3221 {
   bool probe(uint8_t addr);
 
   uint8_t addr_ = 0x40;
+  uint16_t manufId_ = 0;
   float currentA_[3] = {0, 0, 0};
   float busVoltage_ = 0.0f;
   SensorHealth health_ = SensorHealth::NOT_PRESENT;
   uint8_t failCount_ = 0;
+  bool loggedMissing_ = false;
 };
+
+extern Ina3221 ina;
 
 }  // namespace vcm

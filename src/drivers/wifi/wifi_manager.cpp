@@ -42,8 +42,8 @@ static void configureApDhcp(const IPAddress& ip) {
   esp_netif_dhcps_get_status(ap, &st);
   LOGI("WIFI", "dhcps before restart status=%d", static_cast<int>(st));
 
-  // AP_STOP from country/PHY/softAP config leaves the UDP PCB dead while
-  // dhcps still reports STARTED. Stop/set/start so iOS actually gets a lease.
+  // One-time DHCPS restart so iOS gets a lease. Do not repeat this while
+  // the AP is already running.
   esp_netif_dhcps_stop(ap);
 
   dhcps_offer_t offer_dns = OFFER_DNS;
@@ -91,24 +91,29 @@ static const char* authName(wifi_auth_mode_t m) {
 static void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_AP_START:
+      wifiManager.noteApStart();
       LOGI("WIFI", "event AP_START");
       break;
     case ARDUINO_EVENT_WIFI_AP_STOP:
+      wifiManager.noteApStop();
       LOGW("WIFI", "event AP_STOP");
       break;
     case ARDUINO_EVENT_WIFI_AP_STACONNECTED: {
       const auto& s = info.wifi_ap_staconnected;
+      wifiManager.noteStaAssoc();
       LOGI("WIFI", "STA assoc %02X:%02X:%02X:%02X:%02X:%02X aid=%u", s.mac[0],
            s.mac[1], s.mac[2], s.mac[3], s.mac[4], s.mac[5], s.aid);
       break;
     }
     case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED: {
       const auto& s = info.wifi_ap_stadisconnected;
+      wifiManager.noteStaLeave(false);
       LOGW("WIFI", "STA leave  %02X:%02X:%02X:%02X:%02X:%02X aid=%u", s.mac[0],
            s.mac[1], s.mac[2], s.mac[3], s.mac[4], s.mac[5], s.aid);
       break;
     }
     case ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED:
+      wifiManager.noteDhcpAssign();
       LOGI("WIFI", "STA DHCP %s",
            IPAddress(info.wifi_ap_staipassigned.ip.addr).toString().c_str());
       break;
@@ -117,7 +122,40 @@ static void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   }
 }
 
+void WifiManager::noteApStart() {
+  if (stats_.apStartMs == 0) stats_.apStartMs = millis();
+  apActive_ = true;
+}
+
+void WifiManager::noteApStop() {
+  stats_.apStopCount++;
+  apActive_ = false;
+}
+
+void WifiManager::noteStaAssoc() {
+  stats_.assocCount++;
+  gotIpSinceAssoc_ = false;
+}
+
+void WifiManager::noteStaLeave(bool /*hadIp*/) {
+  stats_.disconnectCount++;
+  if (!gotIpSinceAssoc_) stats_.dhcpFailCount++;
+  gotIpSinceAssoc_ = false;
+}
+
+void WifiManager::noteDhcpAssign() { 
+  stats_.dhcpAssignCount++;
+  gotIpSinceAssoc_ = true;
+}
+
+uint32_t WifiManager::apUptimeS() const {
+  if (!apActive_ || stats_.apStartMs == 0) return 0;
+  return (millis() - stats_.apStartMs) / 1000;
+}
+
 void WifiManager::startAp() {
+  if (apStartedOnce_) stats_.wifiResetCount++;
+
   String ssid = config.s(S_WIFI_AP_SSID);
   String pass = config.s(S_WIFI_AP_PASS);
   if (pass.length() > 0 && pass.length() < 8) {
@@ -125,9 +163,8 @@ void WifiManager::startAp() {
     pass = "";
   }
 
-  // Country / PHY before the last AP start. Doing this after softAP()
-  // restarts the radio (AP_STOP) and kills DHCPS — iOS then assoc/leave
-  // every ~400 ms with no IP.
+  // Country / PHY / power-save / HT20 before the AP is advertised. Doing
+  // this after softAP() restarts the radio (AP_STOP) and kills DHCPS.
   const esp_err_t ctry = esp_wifi_set_country_code("US", false);
   LOGI("WIFI", "country US (%s)", esp_err_to_name(ctry));
   esp_wifi_set_ps(WIFI_PS_NONE);
@@ -139,7 +176,7 @@ void WifiManager::startAp() {
 
   const bool ok = WiFi.softAP(ssid.c_str(), pass.length() ? pass.c_str() : nullptr,
                               6, 0, 4);
-  delay(100);
+  delay(50);
   configureApDhcp(kApIp);
   startCaptiveDns(kApIp);
 
@@ -147,6 +184,8 @@ void WifiManager::startAp() {
   memset(&conf, 0, sizeof(conf));
   esp_wifi_get_config(WIFI_IF_AP, &conf);
   apActive_ = true;
+  apStartedOnce_ = true;
+  if (stats_.apStartMs == 0) stats_.apStartMs = millis();
   LOGI("WIFI", "AP %s ssid='%s' auth=%s ch=%u ip=%s heap=%u", ok ? "ok" : "FAIL",
        reinterpret_cast<char*>(conf.ap.ssid), authName(conf.ap.authmode),
        conf.ap.channel, WiFi.softAPIP().toString().c_str(),
@@ -181,15 +220,25 @@ void WifiManager::begin() {
   }
 }
 
+void WifiManager::sampleClientRssi() {
+  wifi_sta_list_t list;
+  memset(&list, 0, sizeof(list));
+  if (esp_wifi_ap_get_sta_list(&list) != ESP_OK || list.num == 0) {
+    stats_.lastClientRssi = 0;
+    return;
+  }
+  stats_.lastClientRssi = list.sta[0].rssi;
+}
+
 void WifiManager::tick() {
   const int mode = config.i(WIFI_MODE);
   if (mode == 1 && !apActive_ && staConnectStart_ != 0 &&
       WiFi.status() != WL_CONNECTED &&
       millis() - staConnectStart_ > STA_CONNECT_TIMEOUT_MS) {
-    // STA-only but unreachable: bring the AP back so we can't be locked out
     LOGW("WIFI", "STA connect timeout; enabling fallback AP");
     WiFi.mode(WIFI_AP_STA);
     startAp();
+    staConnectStart_ = 0;
   }
   static bool wasConnected = false;
   const bool connected = WiFi.status() == WL_CONNECTED;
@@ -202,17 +251,19 @@ void WifiManager::tick() {
   wasConnected = connected;
 
   if (apActive_) {
+    sampleClientRssi();
     static uint8_t lastClients = 0xFF;
     const uint8_t n = clientCount();
     if (n != lastClients) {
       lastClients = n;
-      LOGI("WIFI", "AP clients=%u", n);
+      LOGI("WIFI", "AP clients=%u rssi=%d", n, stats_.lastClientRssi);
     }
   }
 }
 
 int8_t WifiManager::rssi() const {
-  return WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  if (WiFi.status() == WL_CONNECTED) return WiFi.RSSI();
+  return stats_.lastClientRssi;
 }
 
 uint8_t WifiManager::clientCount() const {

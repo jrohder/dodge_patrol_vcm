@@ -9,7 +9,7 @@ firmware (`src/core/pins.h`); everything behavioral is configuration.
 | --- | --- | --- |
 | 1 | UART TX → Nano D0 | commands/ping, 460800 baud. **Not** the silkscreen TX pin. |
 | 2 | UART RX ← Nano D1 | telemetry ~100 Hz, via 5 V→3.3 V divider. **Not** the silkscreen RX pin. |
-| 9 | I2C SDA | 400 kHz sensor bus |
+| 9 | I2C SDA | 100 kHz until INA/MPU ACK reliably (hardware is 400 kHz-capable) |
 | 10 | I2C SCL | |
 | 11 | SPI CS — P3022 | steering **wheel** angle encoder, 4096 counts |
 | 12 | SPI MOSI — P3022 | |
@@ -80,8 +80,31 @@ Firgelli pot   → ADC   → actual position   ──┘
 
 | Device | Address | Role |
 | --- | --- | --- |
-| INA3221 | 0x40 | 3-channel current + bus voltage. Channel roles (left/right/steering) are **configured**, not hardwired (`current.chN_role`). |
-| MPU6050 | 0x68 | Accel/gyro. Mounting orientation fully configurable (`imu.axis_*`, `imu.invert_*`). |
+| INA3221 | 0x40–0x43 | 3-channel **high-side** current + bus voltage. Channel roles (left/right/steering) are **configured**, not hardwired (`current.chN_role`). |
+| MPU6050 | 0x68 / 0x69 | Accel/gyro. Mounting orientation fully configurable (`imu.axis_*`, `imu.invert_*`). |
+
+Firmware leaves the bus at **100 kHz** until both devices ACK. Do not insert the INA3221 shunts in the BTS7960 **motor output** (M+/M−) leads. Each channel should sit on the **positive supply into that BTS7960**:
+
+```
+12/20V BATTERY +
+       │
+       ▼
+   INA3221 CHx+
+       │
+    [SHUNT]
+       │
+       ▼
+   INA3221 CHx-
+       │
+       ▼
+ BTS7960 B+  →  MOTOR  →  BTS7960 B-  →  BATTERY -
+```
+
+Recommended mapping: CH1 = left motor supply, CH2 = right motor supply, CH3 = steering actuator supply.
+
+Even with the power wiring wrong, the ESP32 should still see the chip at 0x40. If Diagnostics → I²C scan shows no ACK, check SDA/SCL swap, 3.3 V, common ground, and pull-ups **before** changing INA software. A full bus scan is **on demand only** (web button or USB `i2c`); boot never scans 0x08–0x77.
+
+SDA = GPIO9, SCL = GPIO10. Internal pull-ups are enabled without detaching the I²C peripheral. External 4.7 kΩ pull-ups to 3.3 V are still recommended on a vehicle harness.
 
 ## Status LED
 
