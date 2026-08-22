@@ -95,6 +95,11 @@ h4 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
   margin-left: 8px; }
 .pill.ok { background: rgba(46,163,107,.2); color: var(--ok); }
 .pill.err { background: rgba(229,72,77,.2); color: var(--err); }
+.pill.warn { background: rgba(210,153,34,.2); color: var(--warn); }
+.st-ok { color: var(--ok); font-weight: 700; }
+.st-off, .st-fault { color: var(--err); font-weight: 700; }
+.st-wait, .st-ni { color: var(--warn); font-weight: 700; }
+.comm-tbl td:first-child { color: var(--muted); width: 48%; }
 
 input[type=number], select, input[type=text], input[type=password] {
   background: var(--panel2); color: var(--text); border: 1px solid var(--line);

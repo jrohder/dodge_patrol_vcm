@@ -150,6 +150,13 @@ String VcmWebServer::buildTelemetryJson() {
   sys["str_max"] = t.system.steerMaxUs;
   sys["str_miss"] = t.system.steerMisses;
   sys["units"] = config.i(UI_UNITS);  // 0=IMPERIAL, 1=METRIC
+  sys["psram"] = t.system.psramFree;
+  sys["largest"] = t.system.largestHeap;
+  sys["clients"] = t.system.wifiClients;
+  sys["ap_assoc"] = t.system.wifiAssoc;
+  sys["ap_disc"] = t.system.wifiDisc;
+  sys["bootn"] = t.system.bootCount;
+  sys["reset"] = t.system.resetReason;
 
   JsonObject drv = doc["drv"].to<JsonObject>();
   drv["thr"] = serialized(String(t.drive.throttleInput, 2));

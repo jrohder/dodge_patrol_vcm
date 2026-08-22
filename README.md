@@ -49,7 +49,11 @@ are all done from a phone.
   active/history tracking and automatic recovery.
 - **OTA** — local `.bin` upload and one-click install from GitHub Releases,
   dual OTA partitions, failed images are discarded and the running firmware
-  keeps working.
+  keeps working. Automatic GitHub polling is **off** (use the Firmware page).
+- **Commissioning-first boot** — motors forced off, then Nano/RC and the
+  200 Hz control loop, then the Wi-Fi AP and web UI. I²C sensors probe in
+  the background and are allowed to be offline. The dashboard shows a live
+  OK / OFFLINE / NOT INSTALLED table.
 
 ## Quick start
 
@@ -95,7 +99,8 @@ src/
   config/     parameter table (params.def) + NVS-backed registry
   control/    PID, vehicle model, speed calc, differential steering,
               steering/drive controllers, arbiter, vehicle dynamics
-  drivers/    BTS7960, P3022, Firgelli ADC, MPU6050, INA3221, Nano UART
+  drivers/    BTS7960, P3022, Firgelli ADC, MPU6050, INA3221, I²C bus,
+              Nano UART link, status LED, WiFi
               link, status LED, WiFi
   services/   logger, telemetry hub, safety state machine, diagnostics,
               event recorder, steering recorder, characterization, calibration, OTA

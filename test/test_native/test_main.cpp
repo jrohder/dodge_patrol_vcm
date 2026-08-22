@@ -16,6 +16,7 @@
 #include "control/steering_compensation.h"
 #include "control/steering_types.h"
 #include "control/vehicle_model.h"
+#include "drivers/i2c/i2c_device_fsm.h"
 #include "proto/protocol.h"
 
 using namespace vcm;
@@ -553,6 +554,48 @@ static void test_sign_changes() {
   TEST_ASSERT_EQUAL_INT(2, countSignChanges(v, 5, 0.1f));
 }
 
+static void test_i2c_fsm_missing_device_is_not_fault() {
+  I2cDeviceFsm f;
+  TEST_ASSERT_TRUE(f.state() == I2cDevState::UNKNOWN);
+  TEST_ASSERT_TRUE(f.shouldProbe(0));
+  TEST_ASSERT_TRUE(f.health() == SensorHealth::NOT_PRESENT);
+  f.onProbeStart(0);
+  TEST_ASSERT_TRUE(f.state() == I2cDevState::PROBING);
+  TEST_ASSERT_FALSE(f.shouldProbe(0));
+  f.onProbeFail(0);
+  TEST_ASSERT_TRUE(f.state() == I2cDevState::RETRY);
+  TEST_ASSERT_TRUE(f.health() == SensorHealth::NOT_PRESENT);
+  TEST_ASSERT_FALSE(f.everOnline());
+  TEST_ASSERT_FALSE(f.shouldProbe(100));
+  TEST_ASSERT_TRUE(f.shouldProbe(500));
+}
+
+static void test_i2c_fsm_online_then_fault_then_retry() {
+  I2cDeviceFsm f;
+  f.onProbeStart(10);
+  f.onProbeOk(10);
+  TEST_ASSERT_TRUE(f.online());
+  TEST_ASSERT_TRUE(f.health() == SensorHealth::OK);
+  TEST_ASSERT_FALSE(f.shouldProbe(20));
+  for (int i = 0; i < I2cDeviceFsm::kFailTrip; ++i) f.onTxnFail(100);
+  TEST_ASSERT_TRUE(f.state() == I2cDevState::FAULT);
+  TEST_ASSERT_TRUE(f.health() == SensorHealth::FAULT);
+  TEST_ASSERT_FALSE(f.shouldProbe(100));
+  TEST_ASSERT_TRUE(f.shouldProbe(100 + I2cDeviceFsm::backoffMs(0)));
+  f.onProbeStart(700);
+  f.onProbeOk(700);
+  TEST_ASSERT_TRUE(f.online());
+  TEST_ASSERT_EQUAL(0, f.failCount());
+}
+
+static void test_i2c_fsm_backoff_steps() {
+  TEST_ASSERT_EQUAL_UINT32(500, I2cDeviceFsm::backoffMs(0));
+  TEST_ASSERT_EQUAL_UINT32(1000, I2cDeviceFsm::backoffMs(1));
+  TEST_ASSERT_EQUAL_UINT32(2000, I2cDeviceFsm::backoffMs(2));
+  TEST_ASSERT_EQUAL_UINT32(5000, I2cDeviceFsm::backoffMs(3));
+  TEST_ASSERT_EQUAL_UINT32(10000, I2cDeviceFsm::backoffMs(9));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_crc16_known_vector);
@@ -583,6 +626,9 @@ int main(int, char**) {
   RUN_TEST(test_feedforward_off_when_empty);
   RUN_TEST(test_slew_pwm);
   RUN_TEST(test_sign_changes);
+  RUN_TEST(test_i2c_fsm_missing_device_is_not_fault);
+  RUN_TEST(test_i2c_fsm_online_then_fault_then_retry);
+  RUN_TEST(test_i2c_fsm_backoff_steps);
   RUN_TEST(test_model_freq_to_rpm);
   RUN_TEST(test_model_freq_to_speed);
   RUN_TEST(test_model_counts_to_distance);

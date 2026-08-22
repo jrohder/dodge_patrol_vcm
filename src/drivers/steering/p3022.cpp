@@ -31,10 +31,15 @@ bool P3022::read(uint16_t& counts) {
   // 12-bit angle in the upper bits of the 16-bit frame
   const uint16_t angle = (raw >> 4) & 0x0FFF;
 
-  // All-zero or all-one frames indicate a missing/failed sensor
+  // All-zero or all-one frames indicate a missing/failed sensor.
+  // Stay NOT_PRESENT if the encoder was never seen (not wired yet).
+  // Only escalate to FAULT after a previously-good sensor drops out.
   if (raw == 0x0000 || raw == 0xFFFF) {
     if (badReads_ < 255) badReads_++;
-    if (badReads_ > 10) health_ = SensorHealth::FAULT;
+    if (badReads_ > 10) {
+      health_ = (health_ == SensorHealth::OK) ? SensorHealth::FAULT
+                                              : SensorHealth::NOT_PRESENT;
+    }
     return false;
   }
   badReads_ = 0;

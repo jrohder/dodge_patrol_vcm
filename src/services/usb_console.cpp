@@ -1,13 +1,14 @@
 #include "services/usb_console.h"
 
 #include <Arduino.h>
-#include <Wire.h>
 #include <string.h>
 
 #include "control/steering_types.h"
 #include "config/config_registry.h"
 #include "core/types.h"
+#include "drivers/i2c/i2c_bus.h"
 #include "services/calibration.h"
+#include "services/commissioning.h"
 #include "services/logger.h"
 #include "services/safety.h"
 #include "services/steering_characterization.h"
@@ -19,18 +20,9 @@ static char line_[128];
 static uint8_t len_ = 0;
 
 static void i2cScan() {
-  LOGI("I2C", "scan 100 kHz...");
-  Wire.setTimeOut(20);
-  int n = 0;
-  for (uint8_t a = 0x08; a < 0x78; ++a) {
-    Wire.beginTransmission(a);
-    const uint8_t err = Wire.endTransmission();
-    if (err == 0) {
-      LOGI("I2C", "ack 0x%02X", a);
-      n++;
-    }
-  }
-  LOGI("I2C", "found %d device(s)", n);
+  i2cBus.requestScan();
+  LOGI("I2C", "scan queued (SDA=GPIO%d SCL=GPIO%d %s)", i2cBus.sdaPin(),
+       i2cBus.sclPin(), i2cBus.busStateName());
 }
 
 static void dumpTel() {
@@ -54,13 +46,23 @@ static void handle(char* line) {
   if (!tok) return;
 
   if (!strcmp(tok, "help")) {
-    LOGI("CMD", "help | i2c | tel | faults | pwm <pct>|off | steer <pct>|off");
-    LOGI("CMD", "cal start [pwm]|abort|status | char start|abort|apply|save");
-    LOGI("CMD", "cfg KEY VAL | save | invert | commission");
+    LOGI("CMD", "help | i2c | recover | status | tel | faults | pwm <pct>|off");
+    LOGI("CMD", "steer <pct>|off | cal start [pwm]|abort|status");
+    LOGI("CMD", "char start|abort|apply|save | cfg KEY VAL | save | invert | commission");
     return;
   }
   if (!strcmp(tok, "i2c")) {
     i2cScan();
+    return;
+  }
+  if (!strcmp(tok, "recover")) {
+    i2cBus.requestRecover();
+    LOGI("I2C", "recovery queued");
+    return;
+  }
+  if (!strcmp(tok, "status")) {
+    refreshCommissioning(commissioning);
+    logCommissioningTable(commissioning);
     return;
   }
   if (!strcmp(tok, "tel")) {

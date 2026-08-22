@@ -153,10 +153,13 @@ struct SystemTelemetry {
   VehicleState state = VehicleState::BOOT;
   ControlSource controlSource = ControlSource::NONE;
   uint32_t uptimeS = 0;
-  uint32_t freeHeap = 0, minFreeHeap = 0;
+  uint32_t freeHeap = 0, minFreeHeap = 0, psramFree = 0, largestHeap = 0;
   float cpuLoadPct = 0.0f;
   int8_t wifiRssi = 0;
   uint8_t wifiClients = 0;
+  uint32_t wifiAssoc = 0, wifiDisc = 0, wifiDhcpFail = 0;
+  uint32_t bootCount = 0;
+  uint32_t resetReason = 0;
   bool commissioned = false;
   uint16_t activeFaultMask = 0;
   // Task timing (us): [avg, max] for dynamics(100Hz) and steering(200Hz)

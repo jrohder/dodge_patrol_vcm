@@ -24,6 +24,7 @@ class Mpu6050 {
 
   bool begin();  ///< probes 0x68 and 0x69 (AD0 strap)
   uint8_t address() const { return addr_; }
+  uint8_t whoAmI() const { return whoAmI_; }
 
   /// Read and process one sample. Call at 100 Hz.
   /// @param orient mounting orientation from configuration
@@ -51,12 +52,16 @@ class Mpu6050 {
   bool probe(uint8_t addr);
 
   uint8_t addr_ = 0x68;
+  uint8_t whoAmI_ = 0;
   float rawAccel_[3] = {0, 0, 0}, rawGyro_[3] = {0, 0, 0};
   float accel_[3] = {0, 0, 0}, gyro_[3] = {0, 0, 0};
   float accelZero_[3] = {0, 0, 0}, gyroZero_[3] = {0, 0, 0};
   float pitch_ = 0, roll_ = 0, tempC_ = 0;
   SensorHealth health_ = SensorHealth::NOT_PRESENT;
   uint8_t failCount_ = 0;
+  bool loggedMissing_ = false;
 };
+
+extern Mpu6050 imu;
 
 }  // namespace vcm

@@ -58,6 +58,18 @@ enum class SensorHealth : uint8_t {
 
 const char* sensorHealthName(SensorHealth h);
 
+/// Commissioning / optional-hardware line status. Missing sensors are not
+/// treated as catastrophic faults.
+enum class SubsystemStatus : uint8_t {
+  OK = 0,
+  OFFLINE,         ///< expected to be present, not communicating
+  NOT_INSTALLED,   ///< not wired yet (speed sensors, manual wheel, pedal)
+  FAULT,
+  WAITING,         ///< still probing
+};
+
+const char* subsystemStatusName(SubsystemStatus s);
+
 /// Fault identifiers. Codes and descriptions live in safety.cpp.
 enum FaultId : uint8_t {
   FLT_NANO_TIMEOUT = 0,   // COM-001

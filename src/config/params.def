@@ -159,8 +159,13 @@ PARAM(UI_UNITS, "ui.units", "Display Units", "", PT_ENUM, 0, 0, 1, PL_BASIC, PF_
 // ---------------------------------------------------------------- web / telemetry
 PARAM(WEB_TELEM_RATE, "web.telemetry_rate", "Telemetry Rate", "Hz", PT_INT, 10, 1, 30, PL_ADVANCED, PF_NONE, "", "WebSocket telemetry update rate to the browser.")
 
+// ---------------------------------------------------------------- hardware install flags (optional sensors)
+PARAM(HW_SPEED_SENSORS, "hw.wheel_speed_installed", "Wheel Speed Sensors Installed", "", PT_BOOL, 0, 0, 1, PL_BASIC, PF_NONE, "", "Set when the rear Hall speed sensors are mounted and wired to the Nano. Until then they are reported as not installed, not as a fault.")
+PARAM(HW_MANUAL_STEER, "hw.manual_steering_installed", "Manual Steering Wheel Installed", "", PT_BOOL, 0, 0, 1, PL_BASIC, PF_NONE, "", "Set when the P3022 steering-wheel encoder is wired. Leave off while only RC steering is used.")
+PARAM(HW_PEDAL, "hw.pedal_installed", "Pedal Installed", "", PT_BOOL, 0, 0, 1, PL_BASIC, PF_NONE, "", "Set when the original pedal/shifter sense wiring is connected to the Nano.")
+
 // ---------------------------------------------------------------- OTA
-PARAM(OTA_AUTO_CHECK, "ota.auto_check", "Auto Check Releases", "", PT_BOOL, 1, 0, 1, PL_BASIC, PF_NONE, "", "Periodically check GitHub Releases for newer firmware.")
+PARAM(OTA_AUTO_CHECK, "ota.auto_check", "Auto Check Releases", "", PT_BOOL, 0, 0, 1, PL_BASIC, PF_NONE, "", "Periodically check GitHub Releases for newer firmware. Leave OFF on the vehicle; use the Firmware page to check manually.")
 PARAM(OTA_PRERELEASE, "ota.allow_prerelease", "Allow Pre-releases", "", PT_BOOL, 0, 0, 1, PL_ADVANCED, PF_NONE, "", "Include pre-release versions when checking for updates.")
 
 // ---------------------------------------------------------------- logging

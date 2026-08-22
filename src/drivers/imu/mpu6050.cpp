@@ -6,6 +6,8 @@
 
 namespace vcm {
 
+Mpu6050 imu;
+
 static constexpr uint8_t REG_PWR_MGMT_1 = 0x6B;
 static constexpr uint8_t REG_CONFIG = 0x1A;
 static constexpr uint8_t REG_WHO_AM_I = 0x75;
@@ -19,6 +21,7 @@ bool Mpu6050::probe(uint8_t addr) {
   if (Wire.endTransmission(false) != 0) return false;
   if (Wire.requestFrom((int)addr, 1) != 1) return false;
   const uint8_t id = Wire.read();
+  whoAmI_ = id;
   // MPU6050=0x68, MPU6500=0x70, MPU9250=0x71, some clones echo the address
   const bool ok = (id == 0x68 || id == 0x70 || id == 0x71 || id == 0x73 ||
                    id == addr);
@@ -52,7 +55,10 @@ bool Mpu6050::begin() {
   }
   if (!found) {
     health_ = SensorHealth::NOT_PRESENT;
-    LOGW("IMU", "MPU6050 not detected at 0x68/0x69");
+    if (!loggedMissing_) {
+      loggedMissing_ = true;
+      LOGW("IMU", "MPU6050 not detected at 0x68/0x69 (retrying in background)");
+    }
     return false;
   }
   Wire.beginTransmission(addr_);

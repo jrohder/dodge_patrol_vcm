@@ -80,6 +80,9 @@ void ConfigRegistry::loadFromNvs() {
     if (storedSchema < 5) {
       applyByKey("steering.feedback_filter", 8.0f);
     }
+    if (storedSchema < 6) {
+      applyByKey("ota.auto_check", 0);
+    }
     LOGW("CONFIG", "Migrated configuration schema v%u -> v%u", storedSchema,
          SCHEMA_VERSION);
     save();
