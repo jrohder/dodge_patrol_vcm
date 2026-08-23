@@ -3,6 +3,7 @@
 #include <Preferences.h>
 
 #include "services/logger.h"
+#include "services/nvs_store.h"
 
 namespace vcm {
 
@@ -83,6 +84,12 @@ void ConfigRegistry::loadFromNvs() {
     if (storedSchema < 6) {
       applyByKey("ota.auto_check", 0);
     }
+    if (storedSchema < 7) {
+      // 100 ms is one missed dynamics cycle plus jitter; it makes the
+      // dashboard flash OFFLINE and trips COM-001 on a healthy UART.
+      if (values_[SAF_NANO_TIMEOUT] <= 100.0f)
+        applyByKey("safety.nano_timeout", 300.0f);
+    }
     LOGW("CONFIG", "Migrated configuration schema v%u -> v%u", storedSchema,
          SCHEMA_VERSION);
     save();
@@ -91,27 +98,59 @@ void ConfigRegistry::loadFromNvs() {
   revision_++;
 }
 
-void ConfigRegistry::save() {
+bool ConfigRegistry::writeToNvs() {
   Preferences prefs;
   if (!prefs.begin(kNamespace, false)) {
     LOGE("CONFIG", "Failed to open NVS for save");
-    return;
+    return false;
   }
-  prefs.putUShort(kSchemaKey, SCHEMA_VERSION);
+  bool ok = prefs.putUShort(kSchemaKey, SCHEMA_VERSION) > 0;
   char nk[16];
   for (int i = 0; i < PARAM_COUNT; ++i) {
     nvsKeyFor(kParams[i].key, nk);
-    prefs.putFloat(nk, values_[i]);
+    if (prefs.putFloat(nk, values_[i]) == 0) {
+      LOGW("CONFIG", "NVS put failed %s", kParams[i].key);
+      ok = false;
+      break;
+    }
   }
   xSemaphoreTake(strMutex_, portMAX_DELAY);
-  for (int i = 0; i < SPARAM_COUNT; ++i) {
+  for (int i = 0; i < SPARAM_COUNT && ok; ++i) {
     nvsKeyFor(kStrParams[i].key, nk);
-    prefs.putString(nk, strValues_[i]);
+    if (prefs.putString(nk, strValues_[i]) == 0 && strValues_[i].length() > 0) {
+      LOGW("CONFIG", "NVS put failed %s", kStrParams[i].key);
+      ok = false;
+    }
   }
   xSemaphoreGive(strMutex_);
   prefs.end();
-  dirty_ = false;
-  LOGI("CONFIG", "Configuration saved to NVS");
+  if (ok) {
+    dirty_ = false;
+    LOGI("CONFIG", "Configuration saved to NVS");
+  }
+  return ok;
+}
+
+bool ConfigRegistry::save() {
+  if (writeToNvs()) return true;
+  if (nvsIsCompacting()) return false;
+  return nvsCompactFromRam();
+}
+
+void ConfigRegistry::dumpToLog() const {
+  LOGI("CONFIG", "---- dump schema v%u dirty=%d rev=%lu ----", SCHEMA_VERSION,
+       dirty_ ? 1 : 0, (unsigned long)revision_);
+  for (int i = 0; i < PARAM_COUNT; ++i) {
+    if (kParams[i].type == PT_FLOAT)
+      LOGI("CFG", "%s=%.4f", kParams[i].key, values_[i]);
+    else
+      LOGI("CFG", "%s=%d", kParams[i].key, (int)values_[i]);
+  }
+  xSemaphoreTake(strMutex_, portMAX_DELAY);
+  for (int i = 0; i < SPARAM_COUNT; ++i) {
+    LOGI("CFG", "%s=%s", kStrParams[i].key, strValues_[i].c_str());
+  }
+  xSemaphoreGive(strMutex_);
 }
 
 void ConfigRegistry::revert() {

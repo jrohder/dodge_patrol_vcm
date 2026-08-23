@@ -53,12 +53,78 @@ size_t encodeFrame(uint8_t* out, PacketType type, uint16_t sequence,
   return kHeaderSize + payloadLen + kCrcSize;
 }
 
+int expectedPayloadSize(uint8_t type) {
+  switch (type) {
+    case kPktTelemetry:
+      return static_cast<int>(sizeof(TelemetryPayload));
+    case kPktHeartbeat:
+      return static_cast<int>(sizeof(HeartbeatPayload));
+    case kPktDiagnostic:
+      return static_cast<int>(sizeof(DiagnosticPayload));
+    case kPktCommandAck:
+      return static_cast<int>(sizeof(CommandAckPayload));
+    case kPktFault:
+      return static_cast<int>(sizeof(FaultPayload));
+    case kPktBoot:
+    case kPktVersion:
+      return static_cast<int>(sizeof(VersionPayload));
+    case kPktCommand:
+      return static_cast<int>(sizeof(CommandPayload));
+    default:
+      return -1;
+  }
+}
+
 void FrameParser::reset() {
   state_ = St::kSync0;
   idx_ = 0;
   total_ = 0;
   crcErrors_ = 0;
   frameErrors_ = 0;
+  resyncing_ = false;
+}
+
+void FrameParser::abandonPartial() {
+  state_ = St::kSync0;
+  idx_ = 0;
+  total_ = 0;
+}
+
+bool FrameParser::replayFrom(size_t start) {
+  if (resyncing_ || idx_ <= start) {
+    state_ = St::kSync0;
+    idx_ = 0;
+    total_ = 0;
+    return false;
+  }
+  uint8_t saved[kMaxFrameSize];
+  const size_t n = idx_ - start;
+  memcpy(saved, raw_ + start, n);
+  state_ = St::kSync0;
+  idx_ = 0;
+  total_ = 0;
+  resyncing_ = true;
+  bool got = false;
+  for (size_t i = 0; i < n; ++i) {
+    if (feed(saved[i])) got = true;
+  }
+  resyncing_ = false;
+  return got;
+}
+
+bool FrameParser::failAndReplay(bool crc) {
+  if (crc) {
+    ++crcErrors_;
+  } else {
+    ++frameErrors_;
+  }
+  if (resyncing_) {
+    state_ = St::kSync0;
+    idx_ = 0;
+    total_ = 0;
+    return false;
+  }
+  return replayFrom(1);
 }
 
 bool FrameParser::feed(uint8_t byte) {
@@ -66,6 +132,7 @@ bool FrameParser::feed(uint8_t byte) {
     case St::kSync0:
       if (byte == kSync0) {
         raw_[0] = byte;
+        idx_ = 1;
         state_ = St::kSync1;
       }
       return false;
@@ -78,7 +145,14 @@ bool FrameParser::feed(uint8_t byte) {
       } else {
         // A lone 0x55 that is not followed by 0xAA might itself be the
         // first byte of a real preamble.
-        state_ = (byte == kSync0) ? St::kSync1 : St::kSync0;
+        if (byte == kSync0) {
+          raw_[0] = byte;
+          idx_ = 1;
+          state_ = St::kSync1;
+        } else {
+          state_ = St::kSync0;
+          idx_ = 0;
+        }
       }
       return false;
 
@@ -86,11 +160,12 @@ bool FrameParser::feed(uint8_t byte) {
       raw_[idx_++] = byte;
       if (idx_ == kHeaderSize) {
         const uint8_t version = raw_[2];
+        const uint8_t type = raw_[3];
         const uint8_t payloadLen = raw_[4];
-        if (version != kProtocolVersion || payloadLen > kMaxPayload) {
-          ++frameErrors_;
-          state_ = St::kSync0;
-          return false;
+        const int want = expectedPayloadSize(type);
+        if (version != kProtocolVersion || want < 0 ||
+            payloadLen != static_cast<uint8_t>(want)) {
+          return failAndReplay(false);
         }
         total_ = kHeaderSize + payloadLen + kCrcSize;
         state_ = St::kBody;
@@ -102,7 +177,6 @@ bool FrameParser::feed(uint8_t byte) {
       if (idx_ < total_) {
         return false;
       }
-      state_ = St::kSync0;
       {
         const size_t payloadLen = total_ - kHeaderSize - kCrcSize;
         const uint16_t expected = crc16(&raw_[2], kHeaderSize - 2 + payloadLen);
@@ -110,8 +184,7 @@ bool FrameParser::feed(uint8_t byte) {
             static_cast<uint16_t>(raw_[total_ - 2]) |
             (static_cast<uint16_t>(raw_[total_ - 1]) << 8);
         if (expected != received) {
-          ++crcErrors_;
-          return false;
+          return failAndReplay(true);
         }
         frame_.version = raw_[2];
         frame_.type = raw_[3];
@@ -123,6 +196,9 @@ bool FrameParser::feed(uint8_t byte) {
                              (static_cast<uint32_t>(raw_[9]) << 16) |
                              (static_cast<uint32_t>(raw_[10]) << 24);
         memcpy(frame_.payload, &raw_[kHeaderSize], payloadLen);
+        state_ = St::kSync0;
+        idx_ = 0;
+        total_ = 0;
       }
       return true;
   }

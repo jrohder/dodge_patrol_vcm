@@ -3,6 +3,7 @@
 #include <Preferences.h>
 
 #include "config/config_registry.h"
+#include "config/vehicle_defaults.h"
 #include "core/version.h"
 #include "services/logger.h"
 #include "services/safety.h"
@@ -14,8 +15,19 @@ CalibrationService calibration;
 static const char* kNamespace = "vcm_cal";
 static constexpr uint32_t kCalTimeoutMs = 60000;  ///< abort runaway wizard
 
+void CalibrationService::applyFactoryDefaults() {
+  steerData_.valid = factory::kSteeringCalValid;
+  steerData_.leftAdc = factory::kSteerLeftAdc;
+  steerData_.rightAdc = factory::kSteerRightAdc;
+  steerData_.centerAdc = factory::kSteerCenterAdc;
+  steerData_.timestamp = 0;
+  strncpy(steerData_.fwVersion, "factory", sizeof(steerData_.fwVersion) - 1);
+  commissioned_ = factory::kCommissioned;
+}
+
 void CalibrationService::begin() {
   Preferences p;
+  bool loaded = false;
   if (p.begin(kNamespace, true)) {
     steerData_.valid = p.getBool("str_valid", false);
     steerData_.leftAdc = p.getFloat("str_left", 0);
@@ -26,23 +38,41 @@ void CalibrationService::begin() {
     strncpy(steerData_.fwVersion, fw.c_str(), sizeof(steerData_.fwVersion) - 1);
     commissioned_ = p.getBool("commissioned", false);
     p.end();
+    loaded = steerData_.valid;
+  }
+  if (!loaded) {
+    applyFactoryDefaults();
+    saveSteering();
+    LOGI("CAL", "Applied factory steering limits L=%.0f C=%.0f R=%.0f",
+         steerData_.leftAdc, steerData_.centerAdc, steerData_.rightAdc);
   }
   LOGI("CAL", "Steering calibration: %s%s",
        steerData_.valid ? "VALID" : "NOT CALIBRATED",
        commissioned_ ? ", vehicle commissioned" : ", NOT COMMISSIONED");
 }
 
-void CalibrationService::saveSteering() {
+bool CalibrationService::saveSteering() {
   Preferences p;
-  if (!p.begin(kNamespace, false)) return;
-  p.putBool("str_valid", steerData_.valid);
-  p.putFloat("str_left", steerData_.leftAdc);
-  p.putFloat("str_right", steerData_.rightAdc);
-  p.putFloat("str_center", steerData_.centerAdc);
-  p.putULong("str_time", steerData_.timestamp);
-  p.putString("str_fw", steerData_.fwVersion);
-  p.putBool("commissioned", commissioned_);
+  if (!p.begin(kNamespace, false)) {
+    LOGE("CAL", "NVS open failed for steering cal");
+    return false;
+  }
+  bool ok = p.putBool("str_valid", steerData_.valid);
+  ok = p.putFloat("str_left", steerData_.leftAdc) && ok;
+  ok = p.putFloat("str_right", steerData_.rightAdc) && ok;
+  ok = p.putFloat("str_center", steerData_.centerAdc) && ok;
+  ok = p.putULong("str_time", steerData_.timestamp) && ok;
+  ok = p.putString("str_fw", steerData_.fwVersion) && ok;
+  ok = p.putBool("commissioned", commissioned_) && ok;
   p.end();
+  if (!ok) LOGE("CAL", "NVS write failed for steering cal");
+  return ok;
+}
+
+void CalibrationService::dumpToLog() const {
+  LOGI("CAL", "valid=%d commissioned=%d L=%.1f C=%.1f R=%.1f fw=%s",
+       steerData_.valid ? 1 : 0, commissioned_ ? 1 : 0, steerData_.leftAdc,
+       steerData_.centerAdc, steerData_.rightAdc, steerData_.fwVersion);
 }
 
 // ---------------------------------------------------------------- steering

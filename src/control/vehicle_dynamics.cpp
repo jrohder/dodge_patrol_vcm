@@ -92,6 +92,24 @@ void VehicleDynamics::monitorSafety(bool rcValid, float battV) {
   }
   if (nano.protocolMismatch()) safety.raiseFault(FLT_NANO_PROTOCOL);
 
+  // COM-002: burst of CRC errors (wiring/EMI), not the lifetime total.
+  static uint32_t lastCrc = 0;
+  static uint32_t lastCrcMs = 0;
+  const uint32_t nowMs = millis();
+  const uint32_t crc = nano.crcErrors();
+  if (lastCrcMs == 0) {
+    lastCrc = crc;
+    lastCrcMs = nowMs;
+  } else if (nowMs - lastCrcMs >= 1000) {
+    const uint32_t delta = crc - lastCrc;
+    lastCrc = crc;
+    lastCrcMs = nowMs;
+    if (delta >= 20)
+      safety.raiseFault(FLT_NANO_CRC);
+    else if (delta == 0)
+      safety.clearFault(FLT_NANO_CRC);
+  }
+
   // RC loss only matters while RC owns the vehicle
   if (arbiter.activeSource() == ControlSource::RC_REMOTE && !rcValid) {
     safety.raiseFault(FLT_RC_LOST);

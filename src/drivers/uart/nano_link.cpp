@@ -4,6 +4,7 @@
 
 #include "core/pins.h"
 #include "driver/gpio.h"
+#include "driver/uart.h"
 #include "services/logger.h"
 
 namespace vcm {
@@ -20,10 +21,15 @@ void NanoLink::begin(uint32_t baud) {
   // afterwards is a no-op and logs "RX Buffer can't be resized when Serial
   // is already running" — the default 256-byte RX ring then overruns at
   // 100 Hz / 460800.
-  kUart.setRxBufferSize(1024);
+  kUart.setRxBufferSize(4096);
   kUart.setTxBufferSize(512);
   kUart.begin(baud_, SERIAL_8N1, pins::NANO_RX, pins::NANO_TX);
   kUart.setTimeout(0);
+  // UART1 FIFO is 128 bytes (~2.8 ms at 460800). Wi-Fi can delay the
+  // copy-out ISR longer than that and drop bytes — CRC storms and a 3 Hz
+  // rate. Interrupt earlier so the FIFO has slack.
+  uart_set_rx_full_threshold(UART_NUM_1, 8);
+  uart_set_rx_timeout(UART_NUM_1, 2);
   LOGI("NANO", "UART link @ %lu baud, protocol v%u (RX=%d TX=%d)",
        (unsigned long)baud_, kProtocolVersion, pins::NANO_RX, pins::NANO_TX);
   // Ask the Nano to identify itself once the link is up.
@@ -32,11 +38,26 @@ void NanoLink::begin(uint32_t baud) {
 
 void NanoLink::poll() {
   rxPinLevel_ = gpio_get_level((gpio_num_t)pins::NANO_RX);
-  while (kUart.available() > 0) {
-    bytesReceived_++;
-    if (parser_.feed((uint8_t)kUart.read())) {
-      handleFrame(parser_.frame());
+  const uint32_t now = millis();
+  if (parser_.partial() && lastRxMs_ != 0 && (now - lastRxMs_) > 8) {
+    parser_.abandonPartial();
+  }
+  uint8_t tmp[128];
+  int avail = kUart.available();
+  if (avail > 0 && (uint32_t)avail > rxHighWater_) rxHighWater_ = (uint32_t)avail;
+  if (avail > 512) rxBackpressure_++;
+  while (avail > 0) {
+    const int want = avail > (int)sizeof(tmp) ? (int)sizeof(tmp) : avail;
+    const int n = kUart.read(tmp, want);
+    if (n <= 0) break;
+    lastRxMs_ = now;
+    bytesReceived_ += (uint32_t)n;
+    for (int i = 0; i < n; ++i) {
+      if (parser_.feed(tmp[i])) handleFrame(parser_.frame());
     }
+    avail = kUart.available();
+    if (avail > 0 && (uint32_t)avail > rxHighWater_)
+      rxHighWater_ = (uint32_t)avail;
   }
 }
 
@@ -164,7 +185,13 @@ void NanoLink::sendCommand(CommandId cmd, const uint8_t args[4]) {
   uint8_t frame[kMaxFrameSize];
   const size_t len =
       encodeFrame(frame, kPktCommand, txSeq_++, micros(), &p, sizeof(p));
-  if (len) kUart.write(frame, len);
+  if (!len) return;
+  // Drop the ping rather than stall core 1 while the TX FIFO is full.
+  if (kUart.availableForWrite() < (int)len) {
+    txDrops_++;
+    return;
+  }
+  kUart.write(frame, len);
 }
 
 void NanoLink::sendPing() { sendCommand(kCmdPing); }

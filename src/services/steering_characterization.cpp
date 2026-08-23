@@ -594,6 +594,11 @@ void SteeringCharacterizationService::persistCurrent() {
   saveBlob("current", current_);
 }
 
+void SteeringCharacterizationService::persistEssential() {
+  saveBlob("current", current_);
+  if (baseline_.status == SteerCharStatus::OK) saveBlob("baseline", baseline_);
+}
+
 void SteeringCharacterizationService::saveHistory() {
   if (histCount_ < kSteerCharHistory) {
     history_[histCount_++] = current_;
@@ -601,15 +606,8 @@ void SteeringCharacterizationService::saveHistory() {
     for (size_t i = 1; i < kSteerCharHistory; ++i) history_[i - 1] = history_[i];
     history_[kSteerCharHistory - 1] = current_;
   }
-  Preferences p;
-  if (!p.begin(kNs, false)) return;
-  p.putUChar("nhist", histCount_);
-  for (uint8_t i = 0; i < histCount_; ++i) {
-    char key[16];
-    snprintf(key, sizeof(key), "h%u", (unsigned)i);
-    p.putBytes(key, &history_[i], sizeof(history_[i]));
-  }
-  p.end();
+  // History stays in RAM only. Eight ~450-byte blobs were filling the
+  // 20 kB NVS partition and wiping config on the next boot.
 }
 
 void SteeringCharacterizationService::loadFromNvs() {

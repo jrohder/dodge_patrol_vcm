@@ -3,6 +3,44 @@
 All notable changes to the Dodge Patrol VCM firmware.
 Format: [Keep a Changelog](https://keepachangelog.com), versioning: semver.
 
+## [Unreleased]
+
+## [1.6.0] - 2026-08-22
+
+### Fixed
+- Configuration / steering cal vanished on power cycle: the 20 kB NVS
+  partition filled (`nvs_set_blob NOT_ENOUGH_SPACE`), the next boot erased
+  it (`ESP_ERR_NVS_NO_FREE_PAGES`), and SAVE still logged success. Saves
+  now detect write failures and compact (erase + rewrite from RAM).
+  Characterization history stays in RAM so it cannot fill flash.
+- Nano rate swinging 111 Hz → 3 Hz with CRC climbing: a single bad byte
+  made the parser swallow the next real frames (false 0x55 0xAA sync).
+  Headers now require the exact payload size for each packet type, and a
+  CRC/header failure resyncs from the next byte so the following frame is
+  not eaten. UART1 RX FIFO interrupts earlier (Wi-Fi can delay the ISR
+  past 128 bytes at 460800).
+- Nano link locked up when the dashboard or USB console was busy:
+  AsyncTCP ran on core 1 with the UART/control loop, `nano.poll()` shared
+  the 100 Hz dynamics task, and `Serial.print` blocked if USB CDC had no
+  reader. UART drain is now a 1 kHz core-1 task, AsyncTCP is on core 0,
+  pings are 2 Hz and non-blocking, and the logger never waits on serial.
+- AP+STA forever-retrying a home SSID (or a trailing-space SSID) scans
+  the radio and drops phone WebSocket clients. Failed STA now disconnects
+  without restarting the AP. Prefer AP-only on the vehicle.
+- Dashboard sends a WebSocket ping every 2 s so idle viewers are not
+  marked disconnected.
+
+### Changed
+- Default `safety.nano_timeout` is 300 ms (was 100). Schema v7 raises a
+  stored 100 ms value so a single late UART poll does not flash OFFLINE
+  or trip COM-001.
+
+### Added
+- Factory steering limits for this vehicle (L=3738 C=2048 R=358,
+  commissioned) when NVS is empty after a wipe.
+- USB `dump`, `nvs`, `nano`, `reboot` console commands.
+- COM-002 when Nano CRC errors burst (≥20/s).
+
 ## [1.5.0] - 2026-08-22
 
 ### Fixed

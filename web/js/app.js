@@ -97,7 +97,10 @@ $("gate-pin").addEventListener("keydown", (e) => {
 });
 bootUi();
 Units.refreshLabels();
-setInterval(() => { if (wsUp && Date.now() - lastTelemetry > 4000) setConn(false); }, 2000);
+setInterval(() => {
+  if (wsUp) wsSend({ type: "ping" });
+  if (wsUp && Date.now() - lastTelemetry > 4000) setConn(false);
+}, 2000);
 
 /* ---------------------------------------------------------- telemetry */
 function fmtUptime(s) {
