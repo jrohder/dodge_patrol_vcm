@@ -17,6 +17,8 @@ class WebAuth {
   bool allowed(AsyncWebServerRequest* req) const;
   /// @return new cookie token, or empty on failure
   String unlock(const char* pin);
+  /// Rewrite remembered-device cookies (used after NVS compact).
+  void persist() { save(); }
 
  private:
   static constexpr int kMaxDevices = 8;

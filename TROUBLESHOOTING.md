@@ -27,6 +27,14 @@ safe) until the condition clears; **WARNING** faults are logged and shown.
 
 ## Common situations
 
+**Settings lost after power cycle**
+- 1.5.0 and earlier could fill the 20 kB NVS partition after a few SAVE
+  or characterization writes. The next boot erased NVS and came up on
+  defaults. Flash firmware that compact-rewrites on SAVE and ships this
+  vehicle’s steering cal as factory defaults.
+- USB `dump` / `nvs` show live keys and NVS used/free. `save` must log
+  `Configuration saved to NVS` with no `NOT_ENOUGH_SPACE`.
+
 **Takes minutes before RC or the AP works**
 - That is not a normal boot. 1.5.0 starts motors-off, Nano/RC, OTA mutex,
   control tasks, then the AP — I²C is background. Ready should be a few
@@ -51,12 +59,28 @@ safe) until the condition clears; **WARNING** faults are logged and shown.
   each BTS7960 **supply**, not in the PWM motor leads. See HARDWARE.md.
 - Missing INA/IMU is **OFFLINE**, not a trip. Steering and RC still run.
 
+**Dashboard says DISCONNECTED / Nano OFFLINE while wiring looks fine**
+- Those two symptoms are often the same radio problem, not two faults.
+  `wifi.mode=AP_STA` plus a home SSID makes the ESP32 scan/join that
+  network. Each scan pauses the vehicle AP and the phone WebSocket dies.
+  A trailing space on the home SSID means it never connects, so it scans
+  forever. Set **WiFi Mode = AP** (USB `cfg wifi.mode 0` then `save` and
+  reboot). Do not join the vehicle AP from the computer you are flashing
+  from.
+- Nano OFFLINE can also be the 100 ms COM-001 window: one late 100 Hz
+  poll looks like a dead UART. USB `nano` shows `age`, `rate`, `lost`,
+  `crc`, `dyn_miss`. If packets keep climbing and `crc` is flat, raise
+  `safety.nano_timeout` to 300 (schema v7 does this automatically).
+- Lifetime CRC that is not still climbing is an old burst, not a live
+  wiring fault. COM-002 is a *current* CRC burst (≥20/s).
+
 **Wi-Fi associates then drops / no IP**
 - Join open `DodgePatrol-VCM`, then `http://192.168.4.1`. Diagnostics → Wi-Fi
   AP shows assoc vs leave vs DHCP fail vs min heap. If min heap is tiny or
   boot count climbs, it is power or memory, not the password.
 - AP country is US, HT20, power-save off. The radio is not restarted in a loop
-  once the AP is up.
+  once the AP is up. AP+STA home-network retries will still drop clients;
+  use AP-only on the car.
 
 **Can't reach the dashboard**
 - AP mode: join **open** network `DodgePatrol-VCM` (no WiFi password), open

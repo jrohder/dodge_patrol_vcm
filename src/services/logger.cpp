@@ -33,12 +33,15 @@ void Logger::log(LogLevel level, const char* module, const char* fmt, ...) {
   vsnprintf(e.message, sizeof(e.message), fmt, args);
   va_end(args);
 
-  // USB CDC (Serial) and UART0 (Serial0 / DevKit TX-RX / USB-UART dongle)
+  // USB CDC (Serial) and UART0 (Serial0 / CH343). Never block a control
+  // task if the host is gone or the TX ring is full.
   char line[192];
   snprintf(line, sizeof(line), "%8lu [%-5s] %-7s %s\n", (unsigned long)e.ms,
            levelName(level), e.module, e.message);
-  Serial.print(line);
-  Serial0.print(line);
+  const size_t n = strlen(line);
+  if (Serial.availableForWrite() >= (int)n) Serial.write((const uint8_t*)line, n);
+  if (Serial0.availableForWrite() >= (int)n)
+    Serial0.write((const uint8_t*)line, n);
 
   if (!mutex_) return;  // before begin(): serial only
   if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(20)) != pdTRUE) return;

@@ -3,8 +3,9 @@
  * @brief Dodge Patrol VCM boot sequence and FreeRTOS task wiring.
  *
  * Task layout (core 1 = control, core 0 = comms/UI):
+ *   nano_rx     1000 Hz  core 1  UART drain only (never waits on Wi-Fi/logs)
  *   steer_motor  200 Hz  core 1  steering PID + drive motor outputs
- *   dynamics     100 Hz  core 1  Nano link, arbitration, vehicle dynamics
+ *   dynamics     100 Hz  core 1  arbitration, vehicle dynamics (no UART I/O)
  *   sensors      100 Hz  core 0  I2C (INA3221 + MPU6050), optional, never blocks control
  *   telemetry     20 Hz  core 0  WebSocket broadcast, recorder, LED
  *   system         1 Hz  core 0  diagnostics, WiFi, commissioning table, button
@@ -37,6 +38,7 @@
 #include "services/diagnostics.h"
 #include "services/event_recorder.h"
 #include "services/logger.h"
+#include "services/nvs_store.h"
 #include "services/ota_service.h"
 #include "services/safety.h"
 #include "services/steering_characterization.h"
@@ -45,7 +47,6 @@
 #include "services/usb_console.h"
 #include "web/web_server.h"
 
-#include <nvs_flash.h>
 
 namespace vcm {
 
@@ -100,17 +101,25 @@ static void steerMotorTask(void*) {
   }
 }
 
-/// 100 Hz: Nano link + control arbitration + vehicle dynamics
-static void dynamicsTask(void*) {
+/// 1 kHz: drain Nano UART. Must not share a core with AsyncTCP/Wi-Fi.
+static void nanoRxTask(void*) {
   TickType_t wake = xTaskGetTickCount();
-  uint8_t hbDivider = 0;
+  uint16_t pingDiv = 0;
   for (;;) {
-    dynMon.beginCycle();
     nano.poll();
-    if (++hbDivider >= 10) {  // 10 Hz heartbeat to the Nano
-      hbDivider = 0;
+    if (++pingDiv >= 500) {  // 2 Hz keepalive; 10 Hz flooded the Nano USB log
+      pingDiv = 0;
       nano.sendHeartbeat();
     }
+    vTaskDelayUntil(&wake, pdMS_TO_TICKS(1));
+  }
+}
+
+/// 100 Hz: control arbitration + vehicle dynamics (UART is nano_rx)
+static void dynamicsTask(void*) {
+  TickType_t wake = xTaskGetTickCount();
+  for (;;) {
+    dynMon.beginCycle();
     dynamics.step();
     calibration.tickMotorTest();
     telemetry.update([&](VehicleTelemetry& t) {
@@ -290,14 +299,23 @@ static void systemTask(void*) {
     static uint8_t nanoLogDiv = 0;
     if (++nanoLogDiv >= 10) {
       nanoLogDiv = 0;
+      const VehicleTelemetry ns = telemetry.snapshot();
+      const uint32_t age =
+          nano.lastPacketMs() ? (millis() - nano.lastPacketMs()) : 9999;
       LOGI("NANO",
-           "online=%d pkts=%lu telem=%lu crc=%lu frm=%lu bytes=%lu acks=%lu rx=%d",
+           "online=%d age=%lu rate=%.0f pkts=%lu telem=%lu lost=%lu crc=%lu "
+           "frm=%lu acks=%lu rx=%d dyn_miss=%lu to=%d hw=%lu bp=%lu txd=%lu",
            nano.online((uint32_t)config.i(SAF_NANO_TIMEOUT)) ? 1 : 0,
+           (unsigned long)age, nano.packetRateHz(),
            (unsigned long)nano.packetsReceived(),
            (unsigned long)nano.telemetryReceived(),
+           (unsigned long)nano.packetsLost(),
            (unsigned long)nano.crcErrors(), (unsigned long)nano.frameErrors(),
-           (unsigned long)nano.bytesReceived(),
-           (unsigned long)nano.acksReceived(), nano.rxPinLevel());
+           (unsigned long)nano.acksReceived(), nano.rxPinLevel(),
+           (unsigned long)ns.system.dynMisses, config.i(SAF_NANO_TIMEOUT),
+           (unsigned long)nano.rxHighWater(),
+           (unsigned long)nano.rxBackpressure(),
+           (unsigned long)nano.txDrops());
     }
 
     if (digitalRead(pins::BOOT_BUTTON) == LOW) {
@@ -354,18 +372,13 @@ static void bootstrap() {
   // bootloader would revert to the previous firmware.
   ota.confirmRunningImage();
 
-  esp_err_t nvs = nvs_flash_init();
-  if (nvs == ESP_ERR_NVS_NO_FREE_PAGES || nvs == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    nvs_flash_erase();
-    nvs_flash_init();
-  }
-
   Serial0.begin(115200);
   Serial.begin(115200);
 #if ARDUINO_USB_CDC_ON_BOOT
   Serial.setTxTimeoutMs(0);
 #endif
   logger.begin();
+  nvsBegin();
   statusLed.begin();
   bootReport.captureReset();
   LOGI("BOOT", "Dodge Patrol VCM %s (%s, built %s)", VCM_FW_VERSION,
@@ -398,6 +411,7 @@ static void bootstrap() {
   // and the chip reboot-loops — the "several minutes to boot" symptom.
   ota.begin();
 
+  xTaskCreatePinnedToCore(nanoRxTask, "nano_rx", 4096, nullptr, 6, nullptr, 1);
   xTaskCreatePinnedToCore(steerMotorTask, "steer_motor", 8192, nullptr, 5,
                           nullptr, 1);
   xTaskCreatePinnedToCore(dynamicsTask, "dynamics", 8192, nullptr, 4, nullptr,

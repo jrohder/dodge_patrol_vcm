@@ -80,7 +80,7 @@
     "diff.aggressive_start": 80.0,
     "diff.aggressive_gain": 1.5,
     "safety.rc_timeout": 500,
-    "safety.nano_timeout": 100,
+    "safety.nano_timeout": 300,
     "safety.web_heartbeat_timeout": 500,
     "safety.battery_cutoff": 10.5,
     "safety.battery_warning": 11.2,

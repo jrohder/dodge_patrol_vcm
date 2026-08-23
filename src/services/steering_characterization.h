@@ -73,6 +73,8 @@ class SteeringCharacterizationService {
   uint8_t historyCount() const { return histCount_; }
 
   void persistCurrent();
+  /// Write current + baseline only (not the 8-slot history). Used after compact.
+  void persistEssential();
 
   static const char* phaseName(SteerCharPhase p);
 

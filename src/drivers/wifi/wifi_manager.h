@@ -52,9 +52,11 @@ class WifiManager {
  private:
   void startAp();
   void sampleClientRssi();
+  void abandonSta(const char* reason);
   bool apActive_ = false;
   bool apStartedOnce_ = false;
   uint32_t staConnectStart_ = 0;
+  bool staAbandoned_ = false;
   bool gotIpSinceAssoc_ = false;
   WifiStats stats_{};
 };

@@ -153,6 +153,18 @@ uint32_t WifiManager::apUptimeS() const {
   return (millis() - stats_.apStartMs) / 1000;
 }
 
+void WifiManager::abandonSta(const char* reason) {
+  if (staAbandoned_) return;
+  staAbandoned_ = true;
+  staConnectStart_ = 0;
+  WiFi.setAutoReconnect(false);
+  // STA disconnect only — do not WiFi.mode() or startAp() here; those
+  // restart the radio (AP_STOP) and kick every phone off the dashboard.
+  WiFi.disconnect(false /*wifioff*/, false /*eraseap*/);
+  LOGW("WIFI", "%s; STA retries stopped (AP stays up)",
+       reason ? reason : "STA abandoned");
+}
+
 void WifiManager::startAp() {
   if (apStartedOnce_) stats_.wifiResetCount++;
 
@@ -199,7 +211,8 @@ void WifiManager::begin() {
   WiFi.persistent(false);
   WiFi.onEvent(onWifiEvent);
   const int mode = config.i(WIFI_MODE);  // 0=AP 1=STA 2=AP_STA
-  const String staSsid = config.s(S_WIFI_STA_SSID);
+  String staSsid = config.s(S_WIFI_STA_SSID);
+  staSsid.trim();
 
   const bool wantSta = (mode != 0) && staSsid.length() > 0;
   const bool wantAp = (mode != 1) || !wantSta;
@@ -209,9 +222,18 @@ void WifiManager::begin() {
 
   if (wantAp) startAp();
   if (wantSta) {
-    LOGI("WIFI", "Connecting to '%s'...", staSsid.c_str());
+    if (wantAp) {
+      LOGW("WIFI",
+           "AP+STA: joining '%s' can drop dashboard clients; STA gives up in 20 s",
+           staSsid.c_str());
+    } else {
+      LOGI("WIFI", "Connecting to '%s'...", staSsid.c_str());
+    }
+    WiFi.setAutoReconnect(true);
     WiFi.begin(staSsid.c_str(), config.s(S_WIFI_STA_PASS).c_str());
     staConnectStart_ = millis();
+  } else if (mode != 0 && config.s(S_WIFI_STA_SSID).length() > 0) {
+    LOGW("WIFI", "STA SSID empty after trim; AP only");
   }
 
   if (MDNS.begin(config.s(S_HOSTNAME).c_str())) {
@@ -232,13 +254,17 @@ void WifiManager::sampleClientRssi() {
 
 void WifiManager::tick() {
   const int mode = config.i(WIFI_MODE);
-  if (mode == 1 && !apActive_ && staConnectStart_ != 0 &&
-      WiFi.status() != WL_CONNECTED &&
+  const bool staUp = WiFi.status() == WL_CONNECTED;
+  if (!staAbandoned_ && staConnectStart_ != 0 && !staUp &&
       millis() - staConnectStart_ > STA_CONNECT_TIMEOUT_MS) {
-    LOGW("WIFI", "STA connect timeout; enabling fallback AP");
-    WiFi.mode(WIFI_AP_STA);
-    startAp();
-    staConnectStart_ = 0;
+    if (mode == 1 && !apActive_) {
+      LOGW("WIFI", "STA connect timeout; enabling fallback AP");
+      WiFi.mode(WIFI_AP_STA);
+      startAp();
+      staConnectStart_ = 0;
+    } else {
+      abandonSta("STA connect timeout");
+    }
   }
   static bool wasConnected = false;
   const bool connected = WiFi.status() == WL_CONNECTED;

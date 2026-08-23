@@ -7,9 +7,11 @@
 #include "config/config_registry.h"
 #include "core/types.h"
 #include "drivers/i2c/i2c_bus.h"
+#include "drivers/uart/nano_link.h"
 #include "services/calibration.h"
 #include "services/commissioning.h"
 #include "services/logger.h"
+#include "services/nvs_store.h"
 #include "services/safety.h"
 #include "services/steering_characterization.h"
 #include "services/telemetry.h"
@@ -49,6 +51,7 @@ static void handle(char* line) {
     LOGI("CMD", "help | i2c | recover | status | tel | faults | pwm <pct>|off");
     LOGI("CMD", "steer <pct>|off | cal start [pwm]|abort|status");
     LOGI("CMD", "char start|abort|apply|save | cfg KEY VAL | save | invert | commission");
+    LOGI("CMD", "dump | nvs | nano | reboot");
     return;
   }
   if (!strcmp(tok, "i2c")) {
@@ -170,7 +173,42 @@ static void handle(char* line) {
     return;
   }
   if (!strcmp(tok, "save")) {
-    config.save();
+    LOGI("CMD", "save %s", config.save() ? "ok" : "FAIL");
+    return;
+  }
+  if (!strcmp(tok, "dump")) {
+    config.dumpToLog();
+    calibration.dumpToLog();
+    nvsLogStats("dump");
+    return;
+  }
+  if (!strcmp(tok, "nvs")) {
+    nvsLogStats("usb");
+    return;
+  }
+  if (!strcmp(tok, "nano")) {
+    const VehicleTelemetry t = telemetry.snapshot();
+    const uint32_t age =
+        t.nano.lastPacketMs ? (millis() - t.nano.lastPacketMs) : 9999;
+    LOGI("CMD",
+         "nano online=%d age=%lu rate=%.0f pkts=%lu tel=%lu lost=%lu crc=%lu "
+         "frm=%lu seq=%lu rx=%d to=%d",
+         t.nano.online ? 1 : 0, (unsigned long)age, t.nano.packetRateHz,
+         (unsigned long)t.nano.packetsReceived,
+         (unsigned long)t.nano.telemetryReceived,
+         (unsigned long)t.nano.packetsLost, (unsigned long)t.nano.crcErrors,
+         (unsigned long)t.nano.frameErrors, (unsigned long)t.nano.seqErrors,
+         nano.rxPinLevel(), config.i(SAF_NANO_TIMEOUT));
+    LOGI("CMD", "dyn avg=%lu max=%lu miss=%lu hw=%lu bp=%lu txdrop=%lu",
+         (unsigned long)t.system.dynAvgUs, (unsigned long)t.system.dynMaxUs,
+         (unsigned long)t.system.dynMisses, (unsigned long)nano.rxHighWater(),
+         (unsigned long)nano.rxBackpressure(), (unsigned long)nano.txDrops());
+    return;
+  }
+  if (!strcmp(tok, "reboot")) {
+    LOGW("CMD", "reboot");
+    delay(100);
+    ESP.restart();
     return;
   }
   if (!strcmp(tok, "commission")) {

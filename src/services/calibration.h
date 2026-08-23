@@ -102,7 +102,9 @@ class CalibrationService {
   bool commissioned() const;
   void setCommissioned(bool done);
 
-  void saveSteering();  ///< persist steering calibration to NVS
+  bool saveSteering();  ///< persist steering calibration to NVS
+  void dumpToLog() const;
+  void applyFactoryDefaults();  ///< RAM + NVS from vehicle_defaults.h
 
  private:
   SteeringCalState steerState_ = SteeringCalState::IDLE;

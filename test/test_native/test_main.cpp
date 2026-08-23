@@ -124,14 +124,15 @@ static void test_roundtrip_telemetry() {
 }
 
 static void test_roundtrip_empty_payload() {
+  HeartbeatPayload hb = {};
   uint8_t buf[kMaxFrameSize];
-  const size_t len = encodeFrame(buf, kPktHeartbeat, 1, 2, nullptr, 0);
-  TEST_ASSERT_EQUAL_UINT(kHeaderSize + kCrcSize, len);
+  const size_t len = encodeFrame(buf, kPktHeartbeat, 1, 2, &hb, sizeof(hb));
+  TEST_ASSERT_EQUAL_UINT(kHeaderSize + sizeof(hb) + kCrcSize, len);
   FrameParser parser;
   int frames = 0;
   feedAll(parser, buf, len, &frames);
   TEST_ASSERT_EQUAL_INT(1, frames);
-  TEST_ASSERT_EQUAL_UINT(0, parser.frame().payloadLen);
+  TEST_ASSERT_EQUAL_UINT(sizeof(hb), parser.frame().payloadLen);
 }
 
 static void test_parser_resync_after_garbage() {
@@ -169,8 +170,9 @@ static void test_parser_rejects_bad_crc() {
 }
 
 static void test_parser_rejects_bad_version() {
+  HeartbeatPayload hb = {};
   uint8_t buf[kMaxFrameSize];
-  const size_t len = encodeFrame(buf, kPktHeartbeat, 0, 0, nullptr, 0);
+  const size_t len = encodeFrame(buf, kPktHeartbeat, 0, 0, &hb, sizeof(hb));
   uint8_t bad[kMaxFrameSize];
   memcpy(bad, buf, len);
   bad[2] = 0x7F;
@@ -196,6 +198,46 @@ static void test_parser_back_to_back_frames() {
   feedAll(parser, buf, total, &frames);
   TEST_ASSERT_EQUAL_INT(3, frames);
   TEST_ASSERT_EQUAL_UINT16(2, parser.frame().sequence);
+}
+
+static void test_parser_rejects_wrong_payload_len() {
+  uint8_t buf[kMaxFrameSize];
+  const uint8_t junk[] = {1, 2, 3, 4};
+  const size_t len =
+      encodeFrame(buf, kPktTelemetry, 1, 0, junk, sizeof(junk));
+  FrameParser parser;
+  int frames = 0;
+  feedAll(parser, buf, len, &frames);
+  TEST_ASSERT_EQUAL_INT(0, frames);
+  TEST_ASSERT_TRUE(parser.frameErrors() >= 1);
+}
+
+static void test_parser_crc_fail_does_not_eat_next_frame() {
+  // False telemetry header + 63-byte body that embeds a real command
+  // frame. Old parser consumed the command as body/CRC and never recovered.
+  CommandPayload cmd = {};
+  cmd.commandId = kCmdPing;
+  uint8_t cmdFrame[kMaxFrameSize];
+  const size_t cmdLen =
+      encodeFrame(cmdFrame, kPktCommand, 5, 1000, &cmd, sizeof(cmd));
+
+  uint8_t stream[kMaxFrameSize * 2] = {};
+  stream[0] = kSync0;
+  stream[1] = kSync1;
+  stream[2] = kProtocolVersion;
+  stream[3] = kPktTelemetry;
+  stream[4] = static_cast<uint8_t>(sizeof(TelemetryPayload));
+  memcpy(stream + 20, cmdFrame, cmdLen);
+  const size_t fakeLen = kHeaderSize + sizeof(TelemetryPayload) + kCrcSize;
+  stream[fakeLen - 1] = 0x00;
+  stream[fakeLen - 2] = 0x00;
+
+  FrameParser parser;
+  int frames = 0;
+  feedAll(parser, stream, fakeLen, &frames);
+  TEST_ASSERT_EQUAL_INT(1, frames);
+  TEST_ASSERT_EQUAL_HEX8(kPktCommand, parser.frame().type);
+  TEST_ASSERT_TRUE(parser.crcErrors() >= 1);
 }
 
 static void test_period_and_freq() {
@@ -609,6 +651,8 @@ int main(int, char**) {
   RUN_TEST(test_parser_rejects_bad_crc);
   RUN_TEST(test_parser_rejects_bad_version);
   RUN_TEST(test_parser_back_to_back_frames);
+  RUN_TEST(test_parser_rejects_wrong_payload_len);
+  RUN_TEST(test_parser_crc_fail_does_not_eat_next_frame);
   RUN_TEST(test_period_and_freq);
   RUN_TEST(test_pid_proportional);
   RUN_TEST(test_pid_output_clamped);

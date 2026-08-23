@@ -346,6 +346,9 @@ struct Frame {
  * truncated frames or CRC failures, and keeps error counters for the
  * diagnostics module.
  */
+/** @return exact payload size for a known type, or -1 if the type is unused. */
+int expectedPayloadSize(uint8_t type);
+
 class FrameParser {
  public:
   FrameParser() { reset(); }
@@ -364,11 +367,19 @@ class FrameParser {
   /** @return header-level errors (bad version/length or lost sync) */
   uint16_t frameErrors() const { return frameErrors_; }
 
+  bool partial() const { return state_ != St::kSync0; }
+
+  /// Drop a half-built frame (inter-byte gap) without clearing counters.
+  void abandonPartial();
+
   /** @brief Reset parser state and error counters. */
   void reset();
 
  private:
   enum class St : uint8_t { kSync0, kSync1, kHeader, kBody };
+
+  bool replayFrom(size_t start);
+  bool failAndReplay(bool crc);
 
   St       state_;
   size_t   idx_;
@@ -377,6 +388,7 @@ class FrameParser {
   Frame    frame_;
   uint16_t crcErrors_;
   uint16_t frameErrors_;
+  bool     resyncing_;
 };
 
 }  // namespace proto

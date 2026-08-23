@@ -23,7 +23,7 @@ namespace vcm {
 
 class ConfigRegistry {
  public:
-  static constexpr uint16_t SCHEMA_VERSION = 6;
+  static constexpr uint16_t SCHEMA_VERSION = 7;
 
   /// Load saved values from NVS (missing keys keep defaults) and migrate
   /// older schema versions if needed. Call once at boot before tasks start.
@@ -46,10 +46,11 @@ class ConfigRegistry {
   bool getByKey(const char* key, float& out) const;
 
   // -- persistence ----------------------------------------------------------
-  void save();          ///< persist all current values to NVS
+  bool save();          ///< persist RAM to NVS; compact-rewrites if full
   void revert();        ///< reload last-saved values into RAM
   void factoryReset();  ///< restore defaults in RAM and NVS
   bool dirty() const { return dirty_; }
+  void dumpToLog() const;  ///< USB/serial dump of every key=value
 
   // -- JSON -----------------------------------------------------------------
   /// Serialize current values (and schema version) for export/backup.
@@ -69,6 +70,7 @@ class ConfigRegistry {
 
  private:
   void loadFromNvs();
+  bool writeToNvs();  ///< one attempt; false if any put failed
 
   float values_[PARAM_COUNT];
   String strValues_[SPARAM_COUNT];

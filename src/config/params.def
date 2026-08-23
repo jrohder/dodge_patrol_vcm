@@ -105,7 +105,7 @@ PARAM(DIF_AGGR_GAIN, "diff.aggressive_gain", "Assist Gain", "x", PT_FLOAT, 1.5f,
 
 // ---------------------------------------------------------------- safety
 PARAM(SAF_RC_TIMEOUT, "safety.rc_timeout", "RC Timeout", "ms", PT_INT, 500, 100, 5000, PL_BASIC, PF_NONE, "", "RC signal loss beyond this raises RC-001 while RC has control.")
-PARAM(SAF_NANO_TIMEOUT, "safety.nano_timeout", "Nano Timeout", "ms", PT_INT, 100, 30, 2000, PL_BASIC, PF_NONE, "", "Nano packet loss beyond this raises COM-001 and commands propulsion safe.")
+PARAM(SAF_NANO_TIMEOUT, "safety.nano_timeout", "Nano Timeout", "ms", PT_INT, 300, 30, 2000, PL_BASIC, PF_NONE, "", "Nano packet loss beyond this raises COM-001 and commands propulsion safe. 100 ms flickers the UI on a single late UART poll.")
 PARAM(SAF_WEB_TIMEOUT, "safety.web_heartbeat_timeout", "Web Control Timeout", "ms", PT_INT, 500, 100, 5000, PL_BASIC, PF_NONE, "", "Web remote heartbeat loss beyond this stops the vehicle when web control owns it.")
 PARAM(SAF_BATT_CUTOFF, "safety.battery_cutoff", "Battery Cutoff Voltage", "V", PT_FLOAT, 10.5f, 6.0f, 40.0f, PL_BASIC, PF_NONE, "", "Below this voltage propulsion is disabled (PWR-001).")
 PARAM(SAF_BATT_WARN, "safety.battery_warning", "Battery Warning Voltage", "V", PT_FLOAT, 11.2f, 6.0f, 40.0f, PL_BASIC, PF_NONE, "", "Below this voltage a low-battery warning is raised.")
@@ -172,7 +172,7 @@ PARAM(OTA_PRERELEASE, "ota.allow_prerelease", "Allow Pre-releases", "", PT_BOOL,
 PARAM(LOG_LEVEL, "log.level", "Log Level", "", PT_ENUM, 2, 0, 4, PL_BASIC, PF_NONE, "ERROR|WARN|INFO|DEBUG|TRACE", "Runtime logging verbosity.")
 
 // ---------------------------------------------------------------- wifi
-PARAM(WIFI_MODE, "wifi.mode", "WiFi Mode", "", PT_ENUM, 0, 0, 2, PL_BASIC, PF_RESTART, "AP|STA|AP_STA", "AP = vehicle hosts its own network; STA = join an existing network.")
+PARAM(WIFI_MODE, "wifi.mode", "WiFi Mode", "", PT_ENUM, 0, 0, 2, PL_BASIC, PF_RESTART, "AP|STA|AP_STA", "AP = vehicle hosts its own network (use this). STA = join home Wi-Fi. AP+STA scans for home Wi-Fi and drops phone dashboard clients.")
 
 // ------------------------------------------------------------- strings
 SPARAM(S_VEHICLE_NAME, "vehicle.name", "Vehicle Name", "Dodge Patrol", PL_BASIC, PF_NONE, "Display name shown on the dashboard.")
